@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0f766e">
+<title>Cobranzas · NAKEL</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+:root{
+  --primary:hsl(172,60%,30%); --primary-light:hsl(172,45%,92%); --primary-dark:hsl(172,65%,22%);
+  --success:hsl(145,55%,42%); --danger:hsl(0,70%,55%); --warn:hsl(38,90%,50%);
+  --bg-main:hsl(200,20%,97%); --bg-card:#fff; --text-main:hsl(210,15%,15%);
+  --text-muted:hsl(210,10%,45%); --border:hsl(210,15%,89%); --shadow:0 4px 10px -4px rgba(0,0,0,.12);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:'Outfit',sans-serif;background:hsl(210,20%,88%);color:var(--text-main);min-height:100vh}
+#app{display:none;flex-direction:column;min-height:100vh;width:100%;max-width:520px;margin:0 auto;background:var(--bg-main);position:relative}
+body.admin #app{max-width:1040px}
+header{padding:14px 16px;display:flex;align-items:center;justify-content:space-between;background:var(--primary);color:#fff;position:sticky;top:0;z-index:100}
+header h1{font-size:1.05rem;font-weight:600;line-height:1.2}
+header small{opacity:.8;font-size:.72rem;display:block;font-weight:300}
+.icon-btn{width:36px;height:36px;border-radius:10px;border:none;background:rgba(255,255,255,.18);color:#fff;cursor:pointer;font-size:.9rem}
+main{flex:1;padding:16px 16px 90px}
+nav{position:sticky;bottom:0;height:66px;background:var(--bg-card);border-top:1px solid var(--border);display:flex;justify-content:space-around;align-items:center;z-index:100}
+.nav-item{flex:1;background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--text-muted);font-size:.68rem;font-family:inherit;cursor:pointer;padding:6px}
+.nav-item i{font-size:1.15rem}
+.nav-item.active{color:var(--primary);font-weight:600}
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
+.card h3{font-size:.95rem;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+label{display:block;font-size:.75rem;color:var(--text-muted);margin:10px 0 4px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.input,select,textarea{width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;font-family:inherit;font-size:1rem;background:var(--bg-card);color:var(--text-main)}
+.input:focus,select:focus{outline:2px solid var(--primary-light);border-color:var(--primary)}
+.btn{width:100%;padding:14px;border:none;border-radius:12px;background:var(--primary);color:#fff;font-family:inherit;font-size:1rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn:active{transform:scale(.99)}
+.btn.sec{background:var(--bg-main);color:var(--text-main);border:1px solid var(--border)}
+.btn.dan{background:var(--danger)}
+.btn.sm{width:auto;padding:8px 14px;font-size:.82rem;border-radius:9px}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.kpi{background:var(--primary);color:#fff;border-radius:16px;padding:18px;margin-bottom:14px}
+.kpi .big{font-size:2rem;font-weight:700;letter-spacing:-.02em}
+.kpi .lbl{font-size:.78rem;opacity:.85}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.mini{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:12px}
+.mini .v{font-size:1.25rem;font-weight:700}
+.mini .l{font-size:.7rem;color:var(--text-muted);text-transform:uppercase}
+.item{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.item .nm{font-weight:600;font-size:.9rem}
+.item .dt{font-size:.72rem;color:var(--text-muted)}
+.item .am{font-weight:700;font-size:1rem;white-space:nowrap}
+.tag{display:inline-block;font-size:.62rem;padding:2px 7px;border-radius:20px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.t-pendiente{background:hsl(38,90%,92%);color:hsl(38,90%,30%)}
+.t-rendido{background:hsl(210,90%,93%);color:hsl(210,80%,35%)}
+.t-exportado{background:hsl(145,55%,90%);color:hsl(145,55%,25%)}
+.t-anulado{background:hsl(0,70%,94%);color:hsl(0,70%,40%)}
+.t-offline{background:hsl(280,60%,93%);color:hsl(280,60%,35%)}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;align-items:flex-end;justify-content:center}
+.modal-box{background:var(--bg-card);width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:18px;max-height:88vh;overflow-y:auto}
+body.admin .modal{align-items:center}
+body.admin .modal-box{border-radius:18px;max-width:640px}
+.cli{padding:11px;border-bottom:1px solid var(--border);cursor:pointer}
+.cli:active{background:var(--primary-light)}
+.cli b{display:block;font-size:.88rem}
+.cli span{font-size:.72rem;color:var(--text-muted)}
+#login{display:flex;flex-direction:column;justify-content:center;min-height:100vh;padding:26px;max-width:420px;margin:0 auto}
+.logo{width:72px;height:72px;border-radius:20px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 18px}
+.pin{letter-spacing:.6em;text-align:center;font-size:1.4rem}
+.banner{padding:10px 14px;border-radius:10px;font-size:.8rem;margin-bottom:12px;display:none}
+.b-off{background:hsl(38,90%,92%);color:hsl(38,90%,28%);display:block}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th,td{padding:8px 6px;text-align:left;border-bottom:1px solid var(--border)}
+th{font-size:.68rem;text-transform:uppercase;color:var(--text-muted)}
+td.n,th.n{text-align:right}
+.scroll{overflow-x:auto}
+.empty{text-align:center;color:var(--text-muted);padding:30px 10px;font-size:.85rem}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:90px;background:var(--text-main);color:#fff;padding:12px 18px;border-radius:12px;font-size:.85rem;z-index:900;opacity:0;transition:.25s;pointer-events:none;max-width:90%}
+.toast.on{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="login">
+  <div class="logo"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+  <h2 style="text-align:center;margin-bottom:4px">Cobranzas NAKEL</h2>
+  <p style="text-align:center;color:var(--text-muted);font-size:.85rem;margin-bottom:22px">Ingreso de cobros en efectivo</p>
+  <div class="card">
+    <label>Usuario</label>
+    <select id="l-user"><option>Cargando…</option></select>
+    <label>PIN</label>
+    <input type="password" inputmode="numeric" maxlength="6" id="l-pin" class="input pin" placeholder="····">
+    <div style="height:14px"></div>
+    <button class="btn" id="l-btn"><i class="fa-solid fa-right-to-bracket"></i> Entrar</button>
+    <p id="l-msg" style="color:var(--danger);font-size:.8rem;text-align:center;margin-top:10px"></p>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app">
+  <header>
+    <div>
+      <h1 id="h-name">—</h1>
+      <small id="h-rol">—</small>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="icon-btn" onclick="sincronizar()" title="Sincronizar"><i class="fa-solid fa-rotate"></i></button>
+      <button class="icon-btn" onclick="salir()" title="Salir"><i class="fa-solid fa-power-off"></i></button>
+    </div>
+  </header>
+  <main id="view"></main>
+  <nav id="nav"></nav>
+</div>
+
+<!-- ============ MODAL CLIENTES ============ -->
+<div class="modal" id="m-cli" onclick="if(event.target===this)cerrar('m-cli')">
+  <div class="modal-box">
+    <h3 style="margin-bottom:10px">Buscar cliente</h3>
+    <input class="input" id="cli-q" placeholder="Nombre, código o CUIT…" oninput="buscarClientes()" autocomplete="off">
+    <p style="font-size:.72rem;color:var(--text-muted);margin:8px 0" id="cli-info"></p>
+    <div id="cli-res"></div>
+    <div style="height:12px"></div>
+    <button class="btn sec" onclick="cerrar('m-cli')">Cerrar</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =====================================================================
+   CONFIGURACIÓN  ·  reemplazar por los datos de tu proyecto Supabase
+   ===================================================================== */
+const SUP_URL = 'https://blckzxhtpxxwhlsksrzz.supabase.co';
+const SUP_KEY = 'sb_publishable_j7MV81AQyXCPt7JAEB0xgA_B9nkbgna';
+const EMPRESA = 'NAKEL SA';
+const PREFIJO_ID = 'NKL-COB';           // prefijo del ID único de importación en Odoo
+const DIARIO_ODOO = 'Caja Cobranzas Efectivo';  // nombre del diario en Odoo (editable al exportar)
+
+/* ===================================================================== */
+let db = null, U = null, vista = 'nueva';
+let clientes = [], clienteSel = null, cache = [], filtros = {};
+
+const $ = id => document.getElementById(id);
+const hoy = () => new Date().toISOString().slice(0,10);
+const money = n => '$ ' + (Number(n)||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const norm = s => (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
+const uid = () => PREFIJO_ID + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2,6).toUpperCase();
+const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(t){ const e=$('toast'); e.textContent=t; e.classList.add('on'); setTimeout(()=>e.classList.remove('on'),2600); }
+function abrir(id){ $(id).style.display='flex'; }
+function cerrar(id){ $(id).style.display='none'; }
+
+/* ============ INICIO ============ */
+document.addEventListener('DOMContentLoaded', async () => {
+  try { if (window.supabase) db = window.supabase.createClient(SUP_URL, SUP_KEY); }
+  catch(e){ console.error('Supabase', e); }
+
+  await cargarUsuariosLogin();
+  $('l-btn').onclick = login;
+  $('l-pin').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+
+  const s = localStorage.getItem('cob_user');
+  if (s) { U = JSON.parse(s); entrar(); }
+
+  window.addEventListener('online', () => { estadoRed(); sincronizar(true); });
+  window.addEventListener('offline', estadoRed);
+});
+
+async function cargarUsuariosLogin(){
+  const sel = $('l-user');
+  let us = JSON.parse(localStorage.getItem('cob_usuarios') || '[]');
+  if (db && navigator.onLine) {
+    const { data } = await db.from('cob_usuarios').select('*').eq('activo', true).order('nombre');
+    if (data && data.length) { us = data; localStorage.setItem('cob_usuarios', JSON.stringify(data)); }
+  }
+  sel.innerHTML = us.length
+    ? us.map(u => `<option value="${esc(u.usuario)}">${esc(u.nombre)}</option>`).join('')
+    : '<option value="">Sin conexión / sin usuarios</option>';
+  window._usuarios = us;
+}
+
+function login(){
+  const u = (window._usuarios||[]).find(x => x.usuario === $('l-user').value);
+  if (!u) return $('l-msg').textContent = 'Usuario no válido.';
+  if (String($('l-pin').value).trim() !== String(u.pin).trim()) return $('l-msg').textContent = 'PIN incorrecto.';
+  U = { usuario:u.usuario, nombre:u.nombre, rol:u.rol, zona:u.zona||null };
+  localStorage.setItem('cob_user', JSON.stringify(U));
+  entrar();
+}
+function salir(){ localStorage.removeItem('cob_user'); location.reload(); }
+
+function entrar(){
+  $('login').style.display = 'none';
+  $('app').style.display = 'flex';
+  document.body.classList.toggle('admin', U.rol === 'admin');
+  $('h-name').textContent = U.nombre;
+  $('h-rol').textContent = (U.rol === 'admin' ? 'Administración · ' : 'Vendedor · ') + EMPRESA;
+  const items = U.rol === 'admin'
+    ? [['panel','fa-chart-pie','Panel'],['cobranzas','fa-list','Cobranzas'],['exportar','fa-file-csv','Exportar'],['datos','fa-database','Datos']]
+    : [['nueva','fa-plus-circle','Cargar'],['mias','fa-list','Mis cobros'],['rendicion','fa-sack-dollar','Rendición']];
+  vista = items[0][0];
+  $('nav').innerHTML = items.map(i =>
+    `<button class="nav-item" data-v="${i[0]}" onclick="ir('${i[0]}')"><i class="fa-solid ${i[1]}"></i>${i[2]}</button>`).join('');
+  cargarClientes();
+  sincronizar(true);
+  ir(vista);
+}
+function ir(v){
+  vista = v;
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.v === v));
+  render();
+}
+
+/* =====================================================================
+   COLA OFFLINE  ·  todo se guarda primero en el dispositivo
+   ===================================================================== */
+const cola = () => JSON.parse(localStorage.getItem('cob_cola') || '[]');
+const setCola = a => localStorage.setItem('cob_cola', JSON.stringify(a));
+
+async function sincronizar(silencioso){
+  if (!db || !navigator.onLine) { if(!silencioso) toast('Sin conexión: los datos quedan en el equipo.'); estadoRed(); return; }
+  let c = cola(), ok = 0;
+  for (const r of [...c]) {
+    const { error } = await db.from('cob_cobranzas').insert(r);
+    if (!error || (error.message||'').includes('duplicate')) { c = c.filter(x => x.uid !== r.uid); ok++; }
+  }
+  setCola(c);
+  await traerCobranzas();
+  if (!silencioso) toast(ok ? `Sincronizadas ${ok} cobranzas.` : 'Todo al día.');
+  render();
+}
+
+async function traerCobranzas(){
+  if (!db || !navigator.onLine) { cache = JSON.parse(localStorage.getItem('cob_cache')||'[]'); return; }
+  let q = db.from('cob_cobranzas').select('*').order('fecha',{ascending:false}).order('id',{ascending:false}).limit(1000);
+  if (U.rol !== 'admin') q = q.eq('vendedor', U.usuario);
+  const { data } = await q;
+  if (data) { cache = data; localStorage.setItem('cob_cache', JSON.stringify(data.slice(0,300))); }
+}
+
+function estadoRed(){
+  const b = $('b-red'); if (b) b.style.display = navigator.onLine ? 'none' : 'block';
+}
+
+/* =====================================================================
+   CLIENTES  ·  se cachean en el dispositivo para buscar sin conexión
+   ===================================================================== */
+async function cargarClientes(forzar){
+  clientes = JSON.parse(localStorage.getItem('cob_clientes') || '[]');
+  const last = localStorage.getItem('cob_clientes_ts');
+  const viejo = !last || (Date.now() - Number(last)) > 86400000;   // 24 h
+  if (!db || !navigator.onLine || (!forzar && !viejo && clientes.length)) return;
+  let todos = [], desde = 0;
+  while (true) {
+    let q = db.from('cob_clientes').select('id,codigo,nombre,cuit,localidad,vendedor')
+              .eq('activo', true).order('nombre').range(desde, desde + 999);
+    const { data, error } = await q;
+    if (error || !data || !data.length) break;
+    todos = todos.concat(data);
+    if (data.length < 1000) break;
+    desde += 1000;
+    if (todos.length > 30000) break;
+  }
+  if (todos.length) {
+    clientes = todos;
+    try {
+      localStorage.setItem('cob_clientes', JSON.stringify(todos));
+      localStorage.setItem('cob_clientes_ts', String(Date.now()));
+    } catch(e){ toast('Cartera muy grande para guardar offline.'); }
+  }
+}
+
+function abrirClientes(){ $('cli-q').value=''; $('cli-res').innerHTML=''; buscarClientes(); abrir('m-cli'); setTimeout(()=>$('cli-q').focus(),200); }
+
+function buscarClientes(){
+  const q = norm($('cli-q').value).trim();
+  let base = clientes;
+  if (U.rol !== 'admin') { const mios = base.filter(c => !c.vendedor || c.vendedor === U.usuario); if (mios.length) base = mios; }
+  let res = q.length < 2 ? base.slice(0,25)
+    : base.filter(c => norm(c.nombre).includes(q) || norm(c.codigo).includes(q) || norm(c.cuit).replace(/-/g,'').includes(q.replace(/-/g,''))).slice(0,40);
+  $('cli-info').textContent = `${clientes.length} clientes en el equipo · mostrando ${res.length}`;
+  $('cli-res').innerHTML = res.length ? res.map(c =>
+    `<div class="cli" onclick="elegirCliente(${c.id})"><b>${esc(c.nombre)}</b><span>${esc(c.codigo||'s/cód')} · ${esc(c.localidad||'')} ${c.cuit?'· '+esc(c.cuit):''}</span></div>`).join('')
+    : `<div class="empty">Sin resultados.<br><button class="btn sm sec" style="margin-top:10px" onclick="usarLibre()">Usar «${esc($('cli-q').value)}» como cliente</button></div>`;
+}
+function elegirCliente(id){
+  clienteSel = clientes.find(c => c.id === id);
+  cerrar('m-cli'); render();
+}
+function usarLibre(){
+  const n = $('cli-q').value.trim(); if (!n) return;
+  clienteSel = { id:0, codigo:'', nombre:n, cuit:'', localidad:'' };
+  cerrar('m-cli'); render();
+}
+
+/* =====================================================================
+   RENDER
+   ===================================================================== */
+function render(){
+  const v = $('view');
+  const banner = `<div class="banner ${navigator.onLine?'':'b-off'}" id="b-red"><i class="fa-solid fa-wifi"></i> Sin conexión — se guarda en el equipo y se sincroniza al volver.</div>`;
+  const pend = cola().length;
+  const avisoCola = pend ? `<div class="card" style="border-color:var(--warn)"><b>${pend}</b> cobranza(s) sin sincronizar. <button class="btn sm" style="margin-top:8px" onclick="sincronizar()">Sincronizar ahora</button></div>` : '';
+  v.innerHTML = banner + avisoCola + ({
+    nueva: vNueva, mias: vMias, rendicion: vRendicion,
+    panel: vPanel, cobranzas: vCobranzas, exportar: vExportar, datos: vDatos
+  }[vista] || vNueva)();
+  estadoRed();
+}
+
+/* ---------- VENDEDOR: cargar ---------- */
+function vNueva(){
+  const c = clienteSel;
+  return `<div class="card">
+    <h3><i class="fa-solid fa-plus-circle" style="color:var(--primary)"></i> Nueva cobranza</h3>
+    <label>Fecha</label>
+    <input type="date" id="f-fecha" class="input" value="${hoy()}">
+    <label>Cliente</label>
+    <button class="btn sec" style="justify-content:space-between;text-align:left" onclick="abrirClientes()">
+      <span>${c ? esc(c.nombre) : 'Tocá para buscar…'}</span><i class="fa-solid fa-magnifying-glass"></i></button>
+    ${c ? `<p style="font-size:.72rem;color:var(--text-muted);margin-top:5px">${esc(c.codigo||'s/código')} ${c.localidad?'· '+esc(c.localidad):''}</p>` : ''}
+    <label>Importe cobrado</label>
+    <input type="number" inputmode="decimal" step="0.01" id="f-importe" class="input" placeholder="0,00" style="font-size:1.4rem;font-weight:700">
+    <label>Medio</label>
+    <select id="f-medio"><option value="efectivo">Efectivo</option><option value="cheque">Cheque de terceros</option><option value="transferencia">Transferencia</option></select>
+    <label>Comprobantes que cancela (opcional)</label>
+    <input class="input" id="f-comp" placeholder="A0001-00012345, A0001-00012400">
+    <label>Observaciones (opcional)</label>
+    <input class="input" id="f-obs" placeholder="Entrega parcial, recibo N°…">
+    <div style="height:16px"></div>
+    <button class="btn" onclick="guardar()"><i class="fa-solid fa-check"></i> Guardar cobranza</button>
+  </div>`;
+}
+
+async function guardar(){
+  const imp = parseFloat($('f-importe').value);
+  if (!clienteSel) return toast('Elegí el cliente.');
+  if (!imp || imp <= 0) return toast('Ingresá un importe válido.');
+  const r = {
+    uid: uid(), fecha: $('f-fecha').value || hoy(),
+    vendedor: U.usuario, vendedor_nombre: U.nombre,
+    cliente_codigo: clienteSel.codigo || null, cliente_nombre: clienteSel.nombre,
+    cliente_cuit: clienteSel.cuit || null,
+    importe: Math.round(imp * 100) / 100,
+    medio: $('f-medio').value,
+    comprobantes: $('f-comp').value || null,
+    observaciones: $('f-obs').value || null,
+    estado: 'pendiente',
+    dispositivo: navigator.userAgent.slice(0,60)
+  };
+  const c = cola(); c.push(r); setCola(c);
+  clienteSel = null;
+  toast('Cobranza guardada: ' + money(r.importe));
+  await sincronizar(true);
+  ir('mias');
+}
+
+/* ---------- VENDEDOR: mis cobros ---------- */
+function misRegistros(){
+  const local = cola().map(r => ({...r, _local:true}));
+  const srv = cache.filter(r => U.rol === 'admin' || r.vendedor === U.usuario);
+  return [...local, ...srv].sort((a,b) => (b.fecha||'').localeCompare(a.fecha||''));
+}
+function vMias(){
+  const regs = misRegistros();
+  const hoyT = regs.filter(r => r.fecha === hoy() && r.estado !== 'anulado').reduce((s,r) => s + Number(r.importe), 0);
+  const pendT = regs.filter(r => r.estado === 'pendiente').reduce((s,r) => s + Number(r.importe), 0);
+  return `<div class="kpi"><div class="lbl">Cobrado hoy</div><div class="big">${money(hoyT)}</div>
+      <div class="lbl" style="margin-top:6px">Sin rendir: ${money(pendT)}</div></div>
+    ${regs.length ? regs.slice(0,80).map(fila).join('') : '<div class="empty">Todavía no cargaste cobranzas.</div>'}`;
+}
+function fila(r){
+  const est = r._local ? 'offline' : r.estado;
+  return `<div class="item"><div>
+      <div class="nm">${esc(r.cliente_nombre)}</div>
+      <div class="dt">${r.fecha} · ${esc(r.medio)} ${r.comprobantes?'· '+esc(r.comprobantes):''}</div>
+      <span class="tag t-${est}">${est}</span>
+    </div><div class="am">${money(r.importe)}</div></div>`;
+}
+
+/* ---------- VENDEDOR: rendición ---------- */
+function vRendicion(){
+  const p = misRegistros().filter(r => (r.estado === 'pendiente' || r._local) && r.medio === 'efectivo');
+  const tot = p.reduce((s,r) => s + Number(r.importe), 0);
+  return `<div class="kpi"><div class="lbl">Efectivo a rendir</div><div class="big">${money(tot)}</div>
+      <div class="lbl" style="margin-top:6px">${p.length} cobranza(s)</div></div>
+    <div class="card"><h3><i class="fa-solid fa-circle-info"></i> Cómo funciona</h3>
+      <p style="font-size:.85rem;color:var(--text-muted);line-height:1.5">Mostrá esta pantalla al entregar el efectivo en administración.
+      Cuando administración confirma la recepción, las cobranzas pasan a estado <b>rendido</b> y quedan listas para exportarse a Odoo.</p></div>
+    ${p.map(fila).join('') || '<div class="empty">No hay efectivo pendiente de rendir.</div>'}`;
+}
+
+/* ---------- ADMIN: panel ---------- */
+function vPanel(){
+  const act = cache.filter(r => r.estado !== 'anulado');
+  const hoyR = act.filter(r => r.fecha === hoy());
+  const mes = hoy().slice(0,7);
+  const mesR = act.filter(r => (r.fecha||'').startsWith(mes));
+  const pend = act.filter(r => r.estado === 'pendiente');
+  const sum = a => a.reduce((s,r) => s + Number(r.importe), 0);
+  const porV = {};
+  pend.forEach(r => { porV[r.vendedor_nombre||r.vendedor] = (porV[r.vendedor_nombre||r.vendedor]||0) + Number(r.importe); });
+  return `<div class="kpi"><div class="lbl">Cobrado hoy</div><div class="big">${money(sum(hoyR))}</div>
+      <div class="lbl" style="margin-top:6px">${hoyR.length} operaciones</div></div>
+    <div class="grid">
+      <div class="mini"><div class="l">Mes ${mes}</div><div class="v">${money(sum(mesR))}</div></div>
+      <div class="mini"><div class="l">Sin rendir</div><div class="v" style="color:var(--warn)">${money(sum(pend))}</div></div>
+      <div class="mini"><div class="l">Sin exportar</div><div class="v">${money(sum(act.filter(r=>r.estado!=='exportado')))}</div></div>
+    </div>
+    <div class="card"><h3><i class="fa-solid fa-users"></i> Efectivo en poder de vendedores</h3>
+      ${Object.keys(porV).length ? Object.entries(porV).sort((a,b)=>b[1]-a[1]).map(([k,v]) =>
+        `<div class="item"><div class="nm">${esc(k)}</div><div class="am">${money(v)}</div></div>`).join('')
+        : '<div class="empty">Todo rendido.</div>'}
+    </div>`;
+}
+
+/* ---------- ADMIN: cobranzas ---------- */
+function vCobranzas(){
+  const f = filtros;
+  let r = cache.filter(x =>
+    (!f.desde || x.fecha >= f.desde) && (!f.hasta || x.fecha <= f.hasta) &&
+    (!f.vend || x.vendedor === f.vend) && (!f.estado || x.estado === f.estado));
+  const tot = r.filter(x => x.estado !== 'anulado').reduce((s,x) => s + Number(x.importe), 0);
+  const vends = [...new Set(cache.map(x => x.vendedor))];
+  return `<div class="card">
+      <div class="row"><div><label>Desde</label><input type="date" class="input" value="${f.desde||''}" onchange="filtros.desde=this.value;render()"></div>
+      <div><label>Hasta</label><input type="date" class="input" value="${f.hasta||''}" onchange="filtros.hasta=this.value;render()"></div></div>
+      <div class="row"><div><label>Vendedor</label><select onchange="filtros.vend=this.value;render()"><option value="">Todos</option>
+        ${vends.map(v => `<option ${f.vend===v?'selected':''}>${esc(v)}</option>`).join('')}</select></div>
+      <div><label>Estado</label><select onchange="filtros.estado=this.value;render()"><option value="">Todos</option>
+        ${['pendiente','rendido','exportado','anulado'].map(e => `<option ${f.estado===e?'selected':''}>${e}</option>`).join('')}</select></div></div>
+    </div>
+    <div class="card"><h3>${r.length} registros · ${money(tot)}</h3>
+      <div class="scroll"><table><thead><tr><th>Fecha</th><th>Vendedor</th><th>Cliente</th><th class="n">Importe</th><th>Estado</th><th></th></tr></thead><tbody>
+      ${r.slice(0,300).map(x => `<tr>
+        <td>${x.fecha}</td><td>${esc(x.vendedor)}</td><td>${esc(x.cliente_nombre)}</td>
+        <td class="n">${money(x.importe)}</td><td><span class="tag t-${x.estado}">${x.estado}</span></td>
+        <td style="white-space:nowrap">
+          ${x.estado==='pendiente'?`<button class="btn sm" onclick="marcar(${x.id},'rendido')">Rendir</button>`:''}
+          ${x.estado!=='anulado'?`<button class="btn sm dan" onclick="marcar(${x.id},'anulado')">Anular</button>`:''}
+        </td></tr>`).join('') || '<tr><td colspan="6" class="empty">Sin registros.</td></tr>'}
+      </tbody></table></div></div>`;
+}
+async function marcar(id, estado){
+  if (estado === 'anulado' && !confirm('¿Anular esta cobranza?')) return;
+  const { error } = await db.from('cob_cobranzas').update({ estado }).eq('id', id);
+  if (error) return toast('Error: ' + error.message);
+  await traerCobranzas(); render(); toast('Actualizado.');
+}
+
+/* ---------- ADMIN: exportar ---------- */
+function vExportar(){
+  const m = hoy().slice(0,7);
+  return `<div class="card">
+    <h3><i class="fa-solid fa-file-csv" style="color:var(--primary)"></i> Exportar período</h3>
+    <div class="row"><div><label>Desde</label><input type="date" id="e-desde" class="input" value="${m}-01"></div>
+    <div><label>Hasta</label><input type="date" id="e-hasta" class="input" value="${hoy()}"></div></div>
+    <label>Vendedor</label>
+    <select id="e-vend"><option value="">Todos</option>${[...new Set(cache.map(x=>x.vendedor))].map(v=>`<option>${esc(v)}</option>`).join('')}</select>
+    <label>Estados a incluir</label>
+    <select id="e-estado"><option value="rendido">Solo rendidas (recomendado)</option><option value="pendiente,rendido">Pendientes + rendidas</option><option value="">Todas (incluye ya exportadas)</option></select>
+    <label>Medio</label>
+    <select id="e-medio"><option value="efectivo">Solo efectivo</option><option value="">Todos los medios</option></select>
+    <label>Diario de Odoo</label>
+    <input class="input" id="e-diario" value="${DIARIO_ODOO}">
+    <label>Formato</label>
+    <select id="e-fmt">
+      <option value="odoo">Extracto para Odoo (coma, punto decimal)</option>
+      <option value="detalle">Detalle interno para Excel (punto y coma)</option>
+    </select>
+    <label><input type="checkbox" id="e-marcar" checked style="width:auto"> Marcar como exportadas al descargar</label>
+    <div style="height:14px"></div>
+    <button class="btn" onclick="exportar()"><i class="fa-solid fa-download"></i> Generar CSV</button>
+    <div id="e-prev" style="margin-top:14px"></div>
+  </div>
+  <div class="card"><h3><i class="fa-solid fa-circle-info"></i> Importación en Odoo 18</h3>
+    <p style="font-size:.84rem;line-height:1.55;color:var(--text-muted)">
+    Contabilidad → diario <b>${DIARIO_ODOO}</b> → <b>Importar extracto</b> y mapear:
+    <code>date</code>→Fecha, <code>payment_ref</code>→Etiqueta, <code>partner_id</code>→Empresa,
+    <code>amount</code>→Importe, <code>unique_import_id</code>→ID único.<br>
+    El <b>ID único</b> evita duplicados si volvés a subir el mismo archivo. Después conciliás
+    línea por línea contra las facturas del cliente, igual que Galicia o Mercado Pago.</p></div>`;
+}
+
+function csvEsc(v, sep){
+  const s = (v == null ? '' : String(v));
+  return (s.includes(sep) || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g,'""') + '"' : s;
+}
+
+async function exportar(){
+  const d = $('e-desde').value, h = $('e-hasta').value;
+  const est = $('e-estado').value ? $('e-estado').value.split(',') : null;
+  const med = $('e-medio').value, vend = $('e-vend').value, fmt = $('e-fmt').value;
+  const diario = $('e-diario').value;
+
+  let q = db.from('cob_cobranzas').select('*').gte('fecha', d).lte('fecha', h).neq('estado','anulado').order('fecha').order('id');
+  if (vend) q = q.eq('vendedor', vend);
+  if (med) q = q.eq('medio', med);
+  if (est) q = q.in('estado', est);
+  const { data, error } = await q;
+  if (error) return toast('Error: ' + error.message);
+  if (!data || !data.length) return toast('No hay cobranzas con esos filtros.');
+
+  let sep, headers, filas, bom = '';
+  if (fmt === 'odoo') {
+    sep = ',';
+    headers = ['date','payment_ref','partner_id','amount','unique_import_id','ref','journal_id'];
+    filas = data.map(r => [
+      r.fecha,
+      `COB EFVO ${r.vendedor_nombre||r.vendedor} - ${r.cliente_nombre}`,
+      r.cliente_nombre,
+      Number(r.importe).toFixed(2),
+      r.uid,
+      r.comprobantes || '',
+      diario
+    ]);
+  } else {
+    sep = ';'; bom = '\uFEFF';
+    headers = ['ID','UID','Fecha','Vendedor','Cliente','Codigo','CUIT','Importe','Medio','Comprobantes','Observaciones','Estado'];
+    filas = data.map(r => [r.id, r.uid, r.fecha, r.vendedor_nombre||r.vendedor, r.cliente_nombre, r.cliente_codigo||'',
+      r.cliente_cuit||'', Number(r.importe).toFixed(2).replace('.',','), r.medio, r.comprobantes||'', r.observaciones||'', r.estado]);
+  }
+  const csv = bom + [headers.join(sep), ...filas.map(f => f.map(v => csvEsc(v,sep)).join(sep))].join('\r\n');
+  const nombre = `cobranzas_${fmt}_${d}_a_${h}.csv`;
+  const url = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8;' }));
+  const a = document.createElement('a'); a.href = url; a.download = nombre; a.click(); URL.revokeObjectURL(url);
+
+  const total = data.reduce((s,r) => s + Number(r.importe), 0);
+  $('e-prev').innerHTML = `<div class="mini"><div class="l">Exportado</div><div class="v">${money(total)}</div>
+    <div class="l">${data.length} líneas · ${nombre}</div></div>`;
+
+  if ($('e-marcar').checked && fmt === 'odoo') {
+    const ids = data.map(r => r.id);
+    await db.from('cob_cobranzas').update({ estado:'exportado', exportado_at:new Date().toISOString() }).in('id', ids);
+    await traerCobranzas();
+  }
+  toast(`CSV generado: ${data.length} líneas.`);
+}
+
+/* ---------- ADMIN: datos (clientes / usuarios) ---------- */
+function vDatos(){
+  return `<div class="card">
+    <h3><i class="fa-solid fa-address-book"></i> Clientes (${clientes.length})</h3>
+    <p style="font-size:.82rem;color:var(--text-muted);line-height:1.5">Exportá de Odoo la lista de clientes a CSV con estas columnas
+    (con encabezado): <code>codigo;nombre;cuit;localidad;vendedor</code></p>
+    <label>Archivo CSV</label>
+    <input type="file" id="d-file" class="input" accept=".csv,.txt">
+    <label><input type="checkbox" id="d-reem" style="width:auto"> Reemplazar cartera existente</label>
+    <div style="height:12px"></div>
+    <button class="btn" onclick="importarClientes()"><i class="fa-solid fa-upload"></i> Importar clientes</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" onclick="cargarClientes(true).then(()=>{render();toast('Cartera actualizada.')})"><i class="fa-solid fa-rotate"></i> Refrescar cache local</button>
+    <div id="d-msg" style="margin-top:10px;font-size:.82rem"></div>
+  </div>
+  <div class="card"><h3><i class="fa-solid fa-user-gear"></i> Usuarios</h3>
+    ${(window._usuarios||[]).map(u => `<div class="item"><div><div class="nm">${esc(u.nombre)}</div>
+      <div class="dt">${esc(u.usuario)} · ${esc(u.rol)}</div></div><span class="tag t-${u.activo?'exportado':'anulado'}">${u.activo?'activo':'baja'}</span></div>`).join('')}
+    <p style="font-size:.78rem;color:var(--text-muted);margin-top:8px">Altas, bajas y PIN se administran desde la tabla <code>cob_usuarios</code> en Supabase.</p>
+  </div>`;
+}
+
+async function importarClientes(){
+  const f = $('d-file').files[0];
+  if (!f) return toast('Elegí un archivo.');
+  const txt = await f.text();
+  const lineas = txt.split(/\r?\n/).filter(l => l.trim());
+  if (lineas.length < 2) return toast('Archivo vacío.');
+  const sep = (lineas[0].match(/;/g)||[]).length >= (lineas[0].match(/,/g)||[]).length ? ';' : ',';
+  const cols = lineas[0].replace(/^\uFEFF/,'').split(sep).map(c => norm(c.trim()));
+  const ix = n => cols.indexOf(n);
+  const regs = lineas.slice(1).map(l => {
+    const p = l.split(sep).map(x => x.trim().replace(/^"|"$/g,''));
+    return { codigo:p[ix('CODIGO')]||null, nombre:p[ix('NOMBRE')]||'', cuit:p[ix('CUIT')]||null,
+             localidad:p[ix('LOCALIDAD')]||null, vendedor:p[ix('VENDEDOR')]||null, activo:true };
+  }).filter(r => r.nombre);
+  if (!regs.length) return toast('No se detectó la columna "nombre".');
+  if ($('d-reem').checked) await db.from('cob_clientes').update({ activo:false }).neq('id', 0);
+  let ok = 0;
+  for (let i = 0; i < regs.length; i += 500) {
+    const { error } = await db.from('cob_clientes').insert(regs.slice(i, i+500));
+    if (!error) ok += regs.slice(i, i+500).length;
+  }
+  $('d-msg').innerHTML = `<b>${ok}</b> clientes importados de ${regs.length}.`;
+  await cargarClientes(true); render(); toast('Importación finalizada.');
+}
+</script>
+</body>
+</html>
