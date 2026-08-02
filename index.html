@@ -75,6 +75,11 @@ th{font-size:.68rem;text-transform:uppercase;color:var(--text-muted)}
 td.n,th.n{text-align:right}
 .scroll{overflow-x:auto}
 .empty{text-align:center;color:var(--text-muted);padding:30px 10px;font-size:.85rem}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+.chips::-webkit-scrollbar{height:0}
+.chip{flex:0 0 auto;padding:8px 13px;border-radius:20px;border:1px solid var(--border);background:var(--bg-card);
+  font-family:inherit;font-size:.8rem;font-weight:600;color:var(--text-muted);cursor:pointer;white-space:nowrap}
+.chip.on{background:var(--primary);border-color:var(--primary);color:#fff}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:90px;background:var(--text-main);color:#fff;padding:12px 18px;border-radius:12px;font-size:.85rem;z-index:900;opacity:0;transition:.25s;pointer-events:none;max-width:90%}
 .toast.on{opacity:1}
 </style>
@@ -125,13 +130,35 @@ td.n,th.n{text-align:right}
   </div>
 </div>
 
+<!-- ============ MODAL USUARIO ============ -->
+<div class="modal" id="m-user" onclick="if(event.target===this)cerrar('m-user')">
+  <div class="modal-box">
+    <h3 id="u-titulo">Nuevo usuario</h3>
+    <label>Usuario (para ingresar)</label>
+    <input class="input" id="u-usuario" placeholder="jperez" autocomplete="off">
+    <label>Nombre y apellido</label>
+    <input class="input" id="u-nombre" placeholder="Juan Pérez">
+    <label id="u-pin-lbl">PIN (4 a 6 dígitos)</label>
+    <input class="input" id="u-pin" inputmode="numeric" maxlength="6" placeholder="····">
+    <label>Rol</label>
+    <select id="u-rol"><option value="vendedor">Vendedor / Repartidor</option><option value="admin">Administración</option></select>
+    <label>Zona (opcional)</label>
+    <input class="input" id="u-zona" placeholder="Comodoro Norte">
+    <label><input type="checkbox" id="u-activo" checked style="width:auto"> Activo</label>
+    <div style="height:14px"></div>
+    <button class="btn" onclick="guardarUsuario()"><i class="fa-solid fa-check"></i> Guardar</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" onclick="cerrar('m-user')">Cancelar</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 /* =====================================================================
    CONFIGURACIÓN  ·  reemplazar por los datos de tu proyecto Supabase
    ===================================================================== */
-const SUP_URL = 'https://ugsaztealewuahbliyxx.supabase.co';
+const SUP_URL = 'https://ugsaztealewuahbliyxx.supabase.co';   // <-- proyecto NAKEL (verificar contra Supabase)
 const SUP_KEY = 'sb_publishable_j7MV81AQyXCPt7JAEB0xgA_B9nkbgna';
 const EMPRESA = 'NAKEL SA';
 const PREFIJO_ID = 'NKL-COB';           // prefijo del ID único de importación en Odoo
@@ -171,8 +198,9 @@ async function cargarUsuariosLogin(){
   const sel = $('l-user');
   let us = JSON.parse(localStorage.getItem('cob_usuarios') || '[]');
   if (db && navigator.onLine) {
-    const { data } = await db.from('cob_usuarios').select('*').eq('activo', true).order('nombre');
-    if (data && data.length) { us = data; localStorage.setItem('cob_usuarios', JSON.stringify(data)); }
+    let r = await db.from('cob_usuarios_publicos').select('*').order('nombre');
+    if (r.error) r = await db.from('cob_usuarios').select('usuario,nombre,rol,pin').eq('activo', true).order('nombre');
+    if (r.data && r.data.length) { us = r.data; localStorage.setItem('cob_usuarios', JSON.stringify(r.data)); }
   }
   sel.innerHTML = us.length
     ? us.map(u => `<option value="${esc(u.usuario)}">${esc(u.nombre)}</option>`).join('')
@@ -180,12 +208,31 @@ async function cargarUsuariosLogin(){
   window._usuarios = us;
 }
 
-function login(){
-  const u = (window._usuarios||[]).find(x => x.usuario === $('l-user').value);
-  if (!u) return $('l-msg').textContent = 'Usuario no válido.';
-  if (String($('l-pin').value).trim() !== String(u.pin).trim()) return $('l-msg').textContent = 'PIN incorrecto.';
-  U = { usuario:u.usuario, nombre:u.nombre, rol:u.rol, zona:u.zona||null };
+async function login(){
+  const usuario = $('l-user').value, pin = String($('l-pin').value).trim();
+  if (!usuario) return $('l-msg').textContent = 'Elegí un usuario.';
+  if (!pin) return $('l-msg').textContent = 'Ingresá el PIN.';
+  $('l-msg').textContent = 'Verificando…';
+  let datos = null;
+  if (db && navigator.onLine) {
+    const { data, error } = await db.rpc('cob_login', { p_usuario: usuario, p_pin: pin });
+    if (!error && data && data.length) datos = data[0];
+    else if (!error) return $('l-msg').textContent = 'Usuario o PIN incorrecto.';
+    else {
+      // Respaldo: base todavía sin las funciones nuevas
+      const u = (window._usuarios||[]).find(x => x.usuario === usuario);
+      if (!u || !u.pin) return $('l-msg').textContent = 'No se pudo validar. Revisá la conexión.';
+      if (String(u.pin).trim() !== pin) return $('l-msg').textContent = 'Usuario o PIN incorrecto.';
+      datos = u;
+    }
+  } else {
+    const s = JSON.parse(localStorage.getItem('cob_user') || 'null');
+    if (!s || s.usuario !== usuario || s.pin !== pin) return $('l-msg').textContent = 'Sin conexión: solo el último usuario puede entrar.';
+    datos = s;
+  }
+  U = { usuario: datos.usuario, nombre: datos.nombre, rol: datos.rol, zona: datos.zona||null, pin: pin };
   localStorage.setItem('cob_user', JSON.stringify(U));
+  $('l-msg').textContent = '';
   entrar();
 }
 function salir(){ localStorage.removeItem('cob_user'); location.reload(); }
@@ -299,6 +346,7 @@ function usarLibre(){
    ===================================================================== */
 function render(){
   const v = $('view');
+  const foco = document.activeElement ? document.activeElement.id : '';
   const banner = `<div class="banner ${navigator.onLine?'':'b-off'}" id="b-red"><i class="fa-solid fa-wifi"></i> Sin conexión — se guarda en el equipo y se sincroniza al volver.</div>`;
   const pend = cola().length;
   const avisoCola = pend ? `<div class="card" style="border-color:var(--warn)"><b>${pend}</b> cobranza(s) sin sincronizar. <button class="btn sm" style="margin-top:8px" onclick="sincronizar()">Sincronizar ahora</button></div>` : '';
@@ -307,6 +355,8 @@ function render(){
     panel: vPanel, cobranzas: vCobranzas, exportar: vExportar, datos: vDatos
   }[vista] || vNueva)();
   estadoRed();
+  if (vista === 'datos' && U.rol === 'admin') cargarUsuariosAdmin();
+  if (foco === 'fp-cli' && $('fp-cli')) { const i = $('fp-cli'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
 }
 
 /* ---------- VENDEDOR: cargar ---------- */
@@ -323,7 +373,7 @@ function vNueva(){
     <label>Importe cobrado</label>
     <input type="number" inputmode="decimal" step="0.01" id="f-importe" class="input" placeholder="0,00" style="font-size:1.4rem;font-weight:700">
     <label>Medio</label>
-    <select id="f-medio"><option value="efectivo">Efectivo</option><option value="cheque">Cheque de terceros</option><option value="transferencia">Transferencia</option></select>
+    <select id="f-medio"><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option></select>
     <label>Comprobantes que cancela (opcional)</label>
     <input class="input" id="f-comp" placeholder="A0001-00012345, A0001-00012400">
     <label>Observaciones (opcional)</label>
@@ -362,13 +412,128 @@ function misRegistros(){
   const srv = cache.filter(r => U.rol === 'admin' || r.vendedor === U.usuario);
   return [...local, ...srv].sort((a,b) => (b.fecha||'').localeCompare(a.fecha||''));
 }
+
+/* ---- Filtro de período (vendedor) ---- */
+let fp = { modo:'hoy', desde:hoy(), hasta:hoy(), cliente:'', medio:'' };
+
+function diasAtras(n){
+  const d = new Date(); d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0,10);
+}
+function setPeriodo(modo){
+  fp.modo = modo;
+  if (modo === 'hoy')      { fp.desde = hoy();            fp.hasta = hoy(); }
+  if (modo === 'ayer')     { fp.desde = diasAtras(1);     fp.hasta = diasAtras(1); }
+  if (modo === '7')        { fp.desde = diasAtras(6);     fp.hasta = hoy(); }
+  if (modo === '15')       { fp.desde = diasAtras(14);    fp.hasta = hoy(); }
+  if (modo === '30')       { fp.desde = diasAtras(29);    fp.hasta = hoy(); }
+  if (modo === 'mes')      { fp.desde = hoy().slice(0,7)+'-01'; fp.hasta = hoy(); }
+  if (modo === 'todo')     { fp.desde = '2000-01-01';     fp.hasta = '2999-12-31'; }
+  render();
+  if (modo !== 'hoy' && navigator.onLine) traerRango();
+}
+function setFecha(campo, valor){
+  fp.modo = 'rango'; fp[campo] = valor;
+  if (fp.desde > fp.hasta) { if (campo === 'desde') fp.hasta = valor; else fp.desde = valor; }
+  render(); if (navigator.onLine) traerRango();
+}
+async function traerRango(){
+  if (!db || !navigator.onLine) return;
+  let q = db.from('cob_cobranzas').select('*')
+            .gte('fecha', fp.desde).lte('fecha', fp.hasta)
+            .order('fecha',{ascending:false}).order('id',{ascending:false}).limit(1000);
+  if (U.rol !== 'admin') q = q.eq('vendedor', U.usuario);
+  const { data } = await q;
+  if (!data) return;
+  const ids = new Set(data.map(r => r.id));
+  cache = [...data, ...cache.filter(r => !ids.has(r.id))];
+  render();
+}
+function enPeriodo(r){
+  if (r.fecha < fp.desde || r.fecha > fp.hasta) return false;
+  if (fp.medio && r.medio !== fp.medio) return false;
+  if (fp.cliente && !norm(r.cliente_nombre).includes(norm(fp.cliente))) return false;
+  return true;
+}
+function setFiltro(campo, valor){ fp[campo] = valor; render(); }
+function limpiarFiltros(){ fp.cliente = ''; fp.medio = ''; render(); }
+
+function barraPeriodo(){
+  const chips = [['hoy','Hoy'],['ayer','Ayer'],['7','7 días'],['15','15 días'],['30','30 días'],['mes','Este mes'],['todo','Todo']];
+  return `<div class="card" style="padding:12px">
+    <div class="chips">${chips.map(c =>
+      `<button class="chip ${fp.modo===c[0]?'on':''}" onclick="setPeriodo('${c[0]}')">${c[1]}</button>`).join('')}</div>
+    <div class="row" style="margin-top:10px">
+      <div><label>Desde</label><input type="date" class="input" value="${fp.desde}" onchange="setFecha('desde',this.value)"></div>
+      <div><label>Hasta</label><input type="date" class="input" value="${fp.hasta}" onchange="setFecha('hasta',this.value)"></div>
+    </div>
+    <label>Cliente</label>
+    <input class="input" id="fp-cli" value="${esc(fp.cliente)}" placeholder="Escribí parte del nombre…"
+           oninput="fp.cliente=this.value;clearTimeout(window._tf);window._tf=setTimeout(render,350)" autocomplete="off">
+    <div class="chips" style="margin-top:8px">
+      <button class="chip ${!fp.cliente?'on':''}" onclick="fp.cliente='';render()"><i class="fa-solid fa-users"></i> Todos los clientes</button>
+      ${fp.cliente?`<button class="chip on" onclick="fp.cliente='';render()">${esc(fp.cliente)} <i class="fa-solid fa-xmark"></i></button>`:''}
+    </div>
+    <label>Medio de pago</label>
+    <select onchange="setFiltro('medio',this.value)">
+      <option value="" ${!fp.medio?'selected':''}>Todos los medios</option>
+      <option value="efectivo" ${fp.medio==='efectivo'?'selected':''}>Efectivo</option>
+      <option value="transferencia" ${fp.medio==='transferencia'?'selected':''}>Transferencia</option>
+    </select>
+  </div>`;
+}
+
+function porMedio(regs){
+  const m = {};
+  regs.forEach(r => { m[r.medio] = m[r.medio] || { n:0, t:0 }; m[r.medio].n++; m[r.medio].t += Number(r.importe); });
+  return Object.entries(m).sort((a,b) => b[1].t - a[1].t);
+}
+function porCliente(regs){
+  const c = {};
+  regs.forEach(r => { const k = r.cliente_nombre; c[k] = c[k] || { n:0, t:0 }; c[k].n++; c[k].t += Number(r.importe); });
+  return Object.entries(c).sort((a,b) => b[1].t - a[1].t);
+}
+
+function porDia(regs){
+  const d = {};
+  regs.forEach(r => { d[r.fecha] = d[r.fecha] || { n:0, t:0 }; d[r.fecha].n++; d[r.fecha].t += Number(r.importe); });
+  return Object.entries(d).sort((a,b) => b[0].localeCompare(a[0]));
+}
+
 function vMias(){
-  const regs = misRegistros();
-  const hoyT = regs.filter(r => r.fecha === hoy() && r.estado !== 'anulado').reduce((s,r) => s + Number(r.importe), 0);
-  const pendT = regs.filter(r => r.estado === 'pendiente').reduce((s,r) => s + Number(r.importe), 0);
-  return `<div class="kpi"><div class="lbl">Cobrado hoy</div><div class="big">${money(hoyT)}</div>
-      <div class="lbl" style="margin-top:6px">Sin rendir: ${money(pendT)}</div></div>
-    ${regs.length ? regs.slice(0,80).map(fila).join('') : '<div class="empty">Todavía no cargaste cobranzas.</div>'}`;
+  const regs = misRegistros().filter(r => enPeriodo(r) && r.estado !== 'anulado');
+  const tot  = regs.reduce((s,r) => s + Number(r.importe), 0);
+  const pend = regs.filter(r => r.estado === 'pendiente' || r._local).reduce((s,r) => s + Number(r.importe), 0);
+  const dias = porDia(regs), medios = porMedio(regs), clis = porCliente(regs);
+  const rotulo = fp.desde === fp.hasta ? fp.desde : `${fp.desde} al ${fp.hasta}`;
+  const nomMedio = { efectivo:'Efectivo', transferencia:'Transferencia' };
+  const detalle = fp.cliente ? `Cliente: ${esc(fp.cliente)}` : '';
+
+  return barraPeriodo() +
+    `<div class="kpi"><div class="lbl">Cobrado · ${rotulo}${fp.medio?' · '+nomMedio[fp.medio]:''}</div>
+      <div class="big">${money(tot)}</div>
+      <div class="lbl" style="margin-top:6px">${regs.length} cobranza(s) · sin rendir ${money(pend)}</div>
+      ${detalle?`<div class="lbl" style="margin-top:3px">${detalle}</div>`:''}</div>
+
+    ${medios.length ? `<div class="card"><h3><i class="fa-solid fa-money-bill-transfer"></i> Por medio de pago</h3>
+      ${medios.map(([m,v]) => `<div class="item"><div><div class="nm">${nomMedio[m]||esc(m)}</div>
+        <div class="dt">${v.n} cobranza(s) · ${tot?Math.round(v.t/tot*100):0}% del total</div></div>
+        <div class="am">${money(v.t)}</div></div>`).join('')}</div>` : ''}
+
+    ${clis.length ? `<div class="card"><h3><i class="fa-solid fa-store"></i> Total por cliente (${clis.length})</h3>
+      ${clis.map(([c,v]) => `<div class="item" style="cursor:pointer" onclick="fp.cliente=${JSON.stringify(c).replace(/"/g,'&quot;')};render()">
+        <div><div class="nm">${esc(c)}</div><div class="dt">${v.n} cobranza(s)</div></div>
+        <div class="am">${money(v.t)}</div></div>`).join('')}
+      <div class="item" style="background:var(--primary-light);border:none;margin-top:6px">
+        <div class="nm">TOTAL DEL PERÍODO</div><div class="am">${money(tot)}</div></div>
+      </div>` : ''}
+
+    ${dias.length > 1 ? `<div class="card"><h3><i class="fa-solid fa-calendar-day"></i> Por día</h3>
+      ${dias.map(([f,v]) => `<div class="item"><div><div class="nm">${f}</div><div class="dt">${v.n} cobranza(s)</div></div>
+        <div class="am">${money(v.t)}</div></div>`).join('')}</div>` : ''}
+
+    <div class="card" style="padding:12px 14px"><h3 style="margin:0"><i class="fa-solid fa-list"></i> Detalle (${regs.length})</h3></div>
+    ${regs.length ? regs.map(fila).join('') : '<div class="empty">Sin cobranzas con estos filtros.</div>'}`;
 }
 function fila(r){
   const est = r._local ? 'offline' : r.estado;
@@ -381,14 +546,23 @@ function fila(r){
 
 /* ---------- VENDEDOR: rendición ---------- */
 function vRendicion(){
-  const p = misRegistros().filter(r => (r.estado === 'pendiente' || r._local) && r.medio === 'efectivo');
-  const tot = p.reduce((s,r) => s + Number(r.importe), 0);
-  return `<div class="kpi"><div class="lbl">Efectivo a rendir</div><div class="big">${money(tot)}</div>
-      <div class="lbl" style="margin-top:6px">${p.length} cobranza(s)</div></div>
-    <div class="card"><h3><i class="fa-solid fa-circle-info"></i> Cómo funciona</h3>
-      <p style="font-size:.85rem;color:var(--text-muted);line-height:1.5">Mostrá esta pantalla al entregar el efectivo en administración.
-      Cuando administración confirma la recepción, las cobranzas pasan a estado <b>rendido</b> y quedan listas para exportarse a Odoo.</p></div>
-    ${p.map(fila).join('') || '<div class="empty">No hay efectivo pendiente de rendir.</div>'}`;
+  const todo = misRegistros().filter(r => r.medio === 'efectivo' && r.estado !== 'anulado');
+  const pend = todo.filter(r => r.estado === 'pendiente' || r._local);   // sin filtro: es el saldo real
+  const tot  = pend.reduce((s,r) => s + Number(r.importe), 0);
+  const hist = todo.filter(r => enPeriodo(r) && !(r.estado === 'pendiente' || r._local));
+  const totH = hist.reduce((s,r) => s + Number(r.importe), 0);
+  const rotulo = fp.desde === fp.hasta ? fp.desde : `${fp.desde} al ${fp.hasta}`;
+  return `<div class="kpi"><div class="lbl">Efectivo en mi poder · a rendir</div><div class="big">${money(tot)}</div>
+      <div class="lbl" style="margin-top:6px">${pend.length} cobranza(s) · total acumulado, sin filtro</div></div>
+    ${pend.length ? `<div class="card"><h3><i class="fa-solid fa-sack-dollar" style="color:var(--warn)"></i> Detalle a entregar</h3>
+      ${pend.map(fila).join('')}</div>` : '<div class="card"><div class="empty">No hay efectivo pendiente de rendir.</div></div>'}
+    <div class="card"><h3><i class="fa-solid fa-clock-rotate-left"></i> Ya rendido</h3>
+      <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:8px">Para controlar entregas anteriores contra tu planilla.</p>
+    </div>
+    ${barraPeriodo()}
+    <div class="mini" style="margin-bottom:12px"><div class="l">Rendido · ${rotulo}</div>
+      <div class="v">${money(totH)}</div><div class="l">${hist.length} cobranza(s)</div></div>
+    ${hist.length ? hist.map(fila).join('') : '<div class="empty">Sin entregas rendidas en este período.</div>'}`;
 }
 
 /* ---------- ADMIN: panel ---------- */
@@ -554,10 +728,58 @@ function vDatos(){
     <div id="d-msg" style="margin-top:10px;font-size:.82rem"></div>
   </div>
   <div class="card"><h3><i class="fa-solid fa-user-gear"></i> Usuarios</h3>
-    ${(window._usuarios||[]).map(u => `<div class="item"><div><div class="nm">${esc(u.nombre)}</div>
-      <div class="dt">${esc(u.usuario)} · ${esc(u.rol)}</div></div><span class="tag t-${u.activo?'exportado':'anulado'}">${u.activo?'activo':'baja'}</span></div>`).join('')}
-    <p style="font-size:.78rem;color:var(--text-muted);margin-top:8px">Altas, bajas y PIN se administran desde la tabla <code>cob_usuarios</code> en Supabase.</p>
+    <button class="btn" onclick="abrirUsuario()"><i class="fa-solid fa-user-plus"></i> Nuevo usuario</button>
+    <div style="height:12px"></div>
+    <div id="u-lista"><div class="empty">Cargando…</div></div>
   </div>`;
+}
+
+/* ---------- ABM de usuarios ---------- */
+async function cargarUsuariosAdmin(){
+  const cont = $('u-lista'); if (!cont) return;
+  const { data, error } = await db.rpc('cob_admin_usuarios', { p_admin:U.usuario, p_pin_admin:U.pin });
+  if (error) { cont.innerHTML = `<div class="empty">No se pudo listar.<br><small>${esc(error.message)}</small></div>`; return; }
+  window._admUsuarios = data || [];
+  cont.innerHTML = (data||[]).map(u => `<div class="item"><div>
+      <div class="nm">${esc(u.nombre)}</div>
+      <div class="dt">${esc(u.usuario)} · ${esc(u.rol)}${u.zona?' · '+esc(u.zona):''}</div>
+      <span class="tag t-${u.activo?'exportado':'anulado'}">${u.activo?'activo':'baja'}</span>
+    </div><div style="white-space:nowrap">
+      <button class="btn sm sec" onclick="abrirUsuario('${esc(u.usuario)}')">Editar</button>
+    </div></div>`).join('') || '<div class="empty">Sin usuarios.</div>';
+}
+
+function abrirUsuario(usuario){
+  const u = (window._admUsuarios||[]).find(x => x.usuario === usuario) || null;
+  $('u-titulo').textContent = u ? 'Editar usuario' : 'Nuevo usuario';
+  $('u-usuario').value = u ? u.usuario : '';
+  $('u-usuario').readOnly = !!u;
+  $('u-nombre').value = u ? u.nombre : '';
+  $('u-pin').value = '';
+  $('u-pin-lbl').textContent = u ? 'PIN (vacío = no cambiarlo)' : 'PIN (4 a 6 dígitos)';
+  $('u-rol').value = u ? u.rol : 'vendedor';
+  $('u-zona').value = u && u.zona ? u.zona : '';
+  $('u-activo').checked = u ? u.activo : true;
+  abrir('m-user');
+}
+
+async function guardarUsuario(){
+  const p = {
+    p_admin: U.usuario, p_pin_admin: U.pin,
+    p_usuario: $('u-usuario').value.trim(),
+    p_nombre:  $('u-nombre').value.trim(),
+    p_pin:     $('u-pin').value.trim(),
+    p_rol:     $('u-rol').value,
+    p_zona:    $('u-zona').value.trim(),
+    p_activo:  $('u-activo').checked
+  };
+  if (!p.p_usuario || !p.p_nombre) return toast('Usuario y nombre son obligatorios.');
+  const { data, error } = await db.rpc('cob_admin_guardar_usuario', p);
+  if (error) return toast(error.message.replace(/^.*?:\s*/, ''));
+  cerrar('m-user');
+  toast(data || 'Guardado.');
+  await cargarUsuariosAdmin();
+  await cargarUsuariosLogin();
 }
 
 async function importarClientes(){
