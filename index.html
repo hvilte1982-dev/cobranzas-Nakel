@@ -163,6 +163,20 @@ td.n,th.n{text-align:right}
   </div>
 </div>
 
+<!-- ============ MODAL ANULAR ============ -->
+<div class="modal" id="m-anular" onclick="if(event.target===this)cerrar('m-anular')">
+  <div class="modal-box">
+    <h3 style="color:var(--danger)"><i class="fa-solid fa-ban"></i> Anular cobranza(s)</h3>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:10px">Vas a anular <b id="an-cant">0</b> cobranza(s). El motivo lo va a ver el vendedor.</p>
+    <label>Motivo de la anulación</label>
+    <textarea id="an-motivo" rows="3" placeholder="Ej: cliente no entregó el efectivo, cobranza duplicada, error de carga…"></textarea>
+    <div style="height:14px"></div>
+    <button class="btn dan" onclick="confirmarAnular()"><i class="fa-solid fa-check"></i> Confirmar anulación</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" onclick="cerrar('m-anular')">Cancelar</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -572,6 +586,7 @@ function fila(r){
   return `<div class="item"><div>
       <div class="nm">${esc(r.cliente_nombre)}</div>
       <div class="dt">${r.fecha} · ${esc(r.medio)} ${r.comprobantes?'· '+esc(r.comprobantes):''}</div>
+      ${r.estado==='anulado'&&r.motivo_anulacion?`<div class="dt" style="color:var(--danger)"><i class="fa-solid fa-circle-info"></i> Anulada: ${esc(r.motivo_anulacion)}</div>`:''}
       <span class="tag t-${est}">${est}</span>
     </div><div class="am">${money(r.importe)}</div></div>`;
 }
@@ -782,25 +797,90 @@ function vCobranzas(){
     (!f.vend || x.vendedor === f.vend) && (!f.estado || x.estado === f.estado));
   const tot = r.filter(x => x.estado !== 'anulado').reduce((s,x) => s + Number(x.importe), 0);
   const vends = [...new Set(cache.map(x => x.vendedor))];
+  const visibles = r.slice(0, 300);
+  const selReg = visibles.filter(x => sel.has(String(x.id)));
+  const totSel = selReg.reduce((s,x) => s + Number(x.importe), 0);
+  const idsVis = visibles.map(x => String(x.id));
+  const puedenRendir = selReg.filter(x => x.estado === 'pendiente').length;
+  const puedenAnular = selReg.filter(x => x.estado !== 'anulado').length;
+
   return `<div class="card">
       <div class="row"><div><label>Desde</label><input type="date" class="input" value="${f.desde||''}" onchange="filtros.desde=this.value;render()"></div>
       <div><label>Hasta</label><input type="date" class="input" value="${f.hasta||''}" onchange="filtros.hasta=this.value;render()"></div></div>
-      <div class="row"><div><label>Vendedor</label><select onchange="filtros.vend=this.value;render()"><option value="">Todos</option>
+      <div class="row"><div><label>Vendedor</label><select onchange="filtros.vend=this.value;sel.clear();render()"><option value="">Todos</option>
         ${vends.map(v => `<option ${f.vend===v?'selected':''}>${esc(v)}</option>`).join('')}</select></div>
-      <div><label>Estado</label><select onchange="filtros.estado=this.value;render()"><option value="">Todos</option>
+      <div><label>Estado</label><select onchange="filtros.estado=this.value;sel.clear();render()"><option value="">Todos</option>
         ${['pendiente','rendido','exportado','anulado'].map(e => `<option ${f.estado===e?'selected':''}>${e}</option>`).join('')}</select></div></div>
     </div>
-    <div class="card"><h3>${r.length} registros · ${money(tot)}</h3>
-      <div class="scroll"><table><thead><tr><th>Fecha</th><th>Vendedor</th><th>Cliente</th><th class="n">Importe</th><th>Estado</th><th></th></tr></thead><tbody>
-      ${r.slice(0,300).map(x => `<tr>
-        <td>${x.fecha}</td><td>${esc(x.vendedor)}</td><td>${esc(x.cliente_nombre)}</td>
-        <td class="n">${money(x.importe)}</td><td><span class="tag t-${x.estado}">${x.estado}</span></td>
-        <td style="white-space:nowrap">
-          ${x.estado==='pendiente'?`<button class="btn sm" onclick="marcar(${x.id},'rendido')">Rendir</button>`:''}
-          ${x.estado!=='anulado'?`<button class="btn sm dan" onclick="marcar(${x.id},'anulado')">Anular</button>`:''}
-        </td></tr>`).join('') || '<tr><td colspan="6" class="empty">Sin registros.</td></tr>'}
-      </tbody></table></div></div>`;
+
+    <div class="card">
+      <h3>${r.length} registros · ${money(tot)}</h3>
+      <div class="chips" style="margin-bottom:10px">
+        <button class="chip" onclick="selTodos(${JSON.stringify(idsVis).replace(/"/g,'&quot;')})"><i class="fa-solid fa-check-double"></i> Tildar todo</button>
+        ${sel.size?`<button class="chip on" onclick="selNada()"><i class="fa-solid fa-xmark"></i> Ninguno</button>`:''}
+      </div>
+
+      ${sel.size ? `<div class="item" style="background:var(--primary);color:#fff;border:none;margin-bottom:10px">
+          <div class="nm" style="color:#fff">SELECCIONADO (${selReg.length})</div><div class="am">${money(totSel)}</div></div>
+        <div class="row" style="margin-bottom:12px">
+          ${puedenRendir?`<button class="btn" onclick="rendirLote()"><i class="fa-solid fa-sack-dollar"></i> Rendir (${puedenRendir})</button>`:''}
+          ${puedenAnular?`<button class="btn dan" onclick="anularLote()"><i class="fa-solid fa-ban"></i> Anular (${puedenAnular})</button>`:''}
+        </div>` : ''}
+
+      ${visibles.length ? visibles.map(filaCobranza).join('') : '<div class="empty">Sin registros.</div>'}
+      ${r.length > 300 ? `<p style="font-size:.75rem;color:var(--text-muted);text-align:center;margin-top:8px">Mostrando 300 de ${r.length}. Ajustá los filtros para ver el resto.</p>` : ''}
+    </div>`;
 }
+
+function filaCobranza(x){
+  const id = String(x.id), marc = sel.has(id);
+  const puedeSel = x.estado !== 'exportado';   // no re-tocar lo ya exportado
+  return `<div class="item" style="${marc?'border-color:var(--primary);background:var(--primary-light)':''}">
+    <div style="display:flex;align-items:center;gap:10px;flex:1;${puedeSel?'cursor:pointer':'opacity:.6'}" ${puedeSel?`onclick="toggleSel('${id}')"`:''}>
+      ${puedeSel?`<i class="fa-${marc?'solid fa-square-check':'regular fa-square'}" style="font-size:1.3rem;color:${marc?'var(--primary)':'var(--text-muted)'}"></i>`:'<i class="fa-solid fa-lock" style="font-size:1rem;color:var(--text-muted)"></i>'}
+      <div>
+        <div class="nm">${esc(x.cliente_nombre)}</div>
+        <div class="dt">${x.fecha} · ${esc(x.vendedor_nombre||x.vendedor)} · ${esc(x.medio)}</div>
+        ${x.estado==='anulado'&&x.motivo_anulacion?`<div class="dt" style="color:var(--danger)"><i class="fa-solid fa-circle-info"></i> ${esc(x.motivo_anulacion)}</div>`:''}
+        <span class="tag t-${x.estado}">${x.estado}</span>
+      </div>
+    </div>
+    <div class="am">${money(x.importe)}</div></div>`;
+}
+
+async function rendirLote(){
+  const ids = cache.filter(x => sel.has(String(x.id)) && x.estado === 'pendiente').map(x => x.id);
+  if (!ids.length) return toast('No hay pendientes seleccionadas.');
+  if (!confirm(`¿Marcar como rendidas ${ids.length} cobranza(s)?`)) return;
+  const rendicionId = 'REN-' + hoy().replace(/-/g,'') + '-' + Math.random().toString(36).slice(2,5).toUpperCase();
+  const { error } = await db.from('cob_cobranzas').update({ estado:'rendido', rendicion:rendicionId }).in('id', ids);
+  if (error) return toast('Error: ' + error.message);
+  sel.clear(); await traerCobranzas(); render(); toast(`${ids.length} rendida(s).`);
+}
+
+function anularLote(){
+  const regs = cache.filter(x => sel.has(String(x.id)) && x.estado !== 'anulado');
+  if (!regs.length) return toast('Nada para anular.');
+  $('an-cant').textContent = regs.length;
+  $('an-motivo').value = '';
+  window._anular = regs.map(x => x.id);
+  abrir('m-anular');
+}
+
+async function confirmarAnular(){
+  const motivo = $('an-motivo').value.trim();
+  if (!motivo) return toast('Escribí el motivo.');
+  const ids = window._anular || [];
+  const { error } = await db.from('cob_cobranzas').update({
+    estado:'anulado', motivo_anulacion: motivo,
+    anulado_por: U.nombre, anulado_at: new Date().toISOString()
+  }).in('id', ids);
+  if (error) return toast('Error: ' + error.message);
+  cerrar('m-anular'); sel.clear();
+  await traerCobranzas(); render();
+  toast(`${ids.length} anulada(s).`);
+}
+
 async function marcar(id, estado){
   if (estado === 'anulado' && !confirm('¿Anular esta cobranza?')) return;
   const { error } = await db.from('cob_cobranzas').update({ estado }).eq('id', id);
