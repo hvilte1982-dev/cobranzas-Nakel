@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#0f766e">
 <title>Cobranzas · NAKEL</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
@@ -395,13 +396,34 @@ function render(){
   const banner = `<div class="banner ${navigator.onLine?'':'b-off'}" id="b-red"><i class="fa-solid fa-wifi"></i> Sin conexión — se guarda en el equipo y se sincroniza al volver.</div>`;
   const pend = cola().length;
   const avisoCola = pend ? `<div class="card" style="border-color:var(--warn)"><b>${pend}</b> cobranza(s) sin sincronizar. <button class="btn sm" style="margin-top:8px" onclick="sincronizar()">Sincronizar ahora</button></div>` : '';
-  v.innerHTML = banner + avisoCola + ({
+  // Aviso de anuladas: solo para vendedor, y solo las no vistas aún
+  let avisoAnul = '';
+  if (U.rol !== 'admin') {
+    const vistas = JSON.parse(localStorage.getItem('cob_anul_vistas') || '[]');
+    const nuevas = cache.filter(r => r.estado === 'anulado' && !vistas.includes(r.id));
+    if (nuevas.length) {
+      avisoAnul = `<div class="card" style="border-color:var(--danger);background:hsl(0,70%,97%)">
+        <h3 style="color:var(--danger);margin-bottom:8px"><i class="fa-solid fa-triangle-exclamation"></i> Administración anuló ${nuevas.length} cobranza(s)</h3>
+        ${nuevas.slice(0,10).map(r => `<div style="font-size:.82rem;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+          <b>${esc(r.cliente_nombre)}</b> · ${money(r.importe)}<br>
+          <span style="color:var(--danger)">${esc(r.motivo_anulacion||'Sin motivo')}</span></div>`).join('')}
+        <button class="btn sm sec" style="margin-top:6px" onclick="marcarAnulVistas()">Entendido</button>
+      </div>`;
+    }
+  }
+  v.innerHTML = banner + avisoCola + avisoAnul + ({
     nueva: vNueva, mias: vMias, rendicion: vRendicion,
     panel: vPanel, recepcion: vRecepcion, cobranzas: vCobranzas, exportar: vExportar, datos: vDatos
   }[vista] || vNueva)();
   estadoRed();
   if (vista === 'datos' && U.rol === 'admin') cargarUsuariosAdmin();
   if (foco === 'fp-cli' && $('fp-cli')) { const i = $('fp-cli'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+}
+
+function marcarAnulVistas(){
+  const ids = cache.filter(r => r.estado === 'anulado').map(r => r.id);
+  localStorage.setItem('cob_anul_vistas', JSON.stringify(ids));
+  render();
 }
 
 /* ---------- VENDEDOR: cargar ---------- */
@@ -547,7 +569,9 @@ function porDia(regs){
 }
 
 function vMias(){
-  const regs = misRegistros().filter(r => enPeriodo(r) && r.estado !== 'anulado');
+  const enP = misRegistros().filter(r => enPeriodo(r));
+  const anuladas = enP.filter(r => r.estado === 'anulado');
+  const regs = enP.filter(r => r.estado !== 'anulado');   // para totales
   const tot  = regs.reduce((s,r) => s + Number(r.importe), 0);
   const pend = regs.filter(r => r.estado === 'pendiente' || r._local).reduce((s,r) => s + Number(r.importe), 0);
   const dias = porDia(regs), medios = porMedio(regs), clis = porCliente(regs);
@@ -560,6 +584,14 @@ function vMias(){
       <div class="big">${money(tot)}</div>
       <div class="lbl" style="margin-top:6px">${regs.length} cobranza(s) · sin rendir ${money(pend)}</div>
       ${detalle?`<div class="lbl" style="margin-top:3px">${detalle}</div>`:''}</div>
+
+    ${anuladas.length ? `<div class="card" style="border-color:var(--danger)">
+      <h3 style="color:var(--danger)"><i class="fa-solid fa-triangle-exclamation"></i> ${anuladas.length} cobranza(s) anulada(s) por administración</h3>
+      ${anuladas.map(r => `<div class="item" style="border-color:var(--danger)"><div>
+        <div class="nm">${esc(r.cliente_nombre)}</div>
+        <div class="dt">${r.fecha} · ${money(r.importe)}</div>
+        <div class="dt" style="color:var(--danger)"><i class="fa-solid fa-circle-info"></i> ${esc(r.motivo_anulacion||'Sin motivo indicado')}</div>
+      </div></div>`).join('')}</div>` : ''}
 
     ${medios.length ? `<div class="card"><h3><i class="fa-solid fa-money-bill-transfer"></i> Por medio de pago</h3>
       ${medios.map(([m,v]) => `<div class="item"><div><div class="nm">${nomMedio[m]||esc(m)}</div>
@@ -802,7 +834,7 @@ function vCobranzas(){
   const totSel = selReg.reduce((s,x) => s + Number(x.importe), 0);
   const idsVis = visibles.map(x => String(x.id));
   const puedenRendir = selReg.filter(x => x.estado === 'pendiente').length;
-  const puedenAnular = selReg.filter(x => x.estado !== 'anulado').length;
+  const puedenAnular = selReg.filter(x => x.estado === 'pendiente').length;   // solo pendientes se anulan
 
   return `<div class="card">
       <div class="row"><div><label>Desde</label><input type="date" class="input" value="${f.desde||''}" onchange="filtros.desde=this.value;render()"></div>
@@ -834,10 +866,12 @@ function vCobranzas(){
 
 function filaCobranza(x){
   const id = String(x.id), marc = sel.has(id);
-  const puedeSel = x.estado !== 'exportado';   // no re-tocar lo ya exportado
+  const puedeSel = x.estado === 'pendiente';   // solo pendientes: rendir o anular
+  const bloqueoTxt = { rendido:'Ya rendida', exportado:'Ya exportada a Odoo', anulado:'Anulada' }[x.estado] || '';
   return `<div class="item" style="${marc?'border-color:var(--primary);background:var(--primary-light)':''}">
-    <div style="display:flex;align-items:center;gap:10px;flex:1;${puedeSel?'cursor:pointer':'opacity:.6'}" ${puedeSel?`onclick="toggleSel('${id}')"`:''}>
-      ${puedeSel?`<i class="fa-${marc?'solid fa-square-check':'regular fa-square'}" style="font-size:1.3rem;color:${marc?'var(--primary)':'var(--text-muted)'}"></i>`:'<i class="fa-solid fa-lock" style="font-size:1rem;color:var(--text-muted)"></i>'}
+    <div style="display:flex;align-items:center;gap:10px;flex:1;${puedeSel?'cursor:pointer':'opacity:.65'}" ${puedeSel?`onclick="toggleSel('${id}')"`:''}>
+      ${puedeSel?`<i class="fa-${marc?'solid fa-square-check':'regular fa-square'}" style="font-size:1.3rem;color:${marc?'var(--primary)':'var(--text-muted)'}"></i>`
+                :`<i class="fa-solid fa-lock" style="font-size:1rem;color:var(--text-muted)" title="${bloqueoTxt}"></i>`}
       <div>
         <div class="nm">${esc(x.cliente_nombre)}</div>
         <div class="dt">${x.fecha} · ${esc(x.vendedor_nombre||x.vendedor)} · ${esc(x.medio)}</div>
@@ -859,8 +893,8 @@ async function rendirLote(){
 }
 
 function anularLote(){
-  const regs = cache.filter(x => sel.has(String(x.id)) && x.estado !== 'anulado');
-  if (!regs.length) return toast('Nada para anular.');
+  const regs = cache.filter(x => sel.has(String(x.id)) && x.estado === 'pendiente');
+  if (!regs.length) return toast('Solo se pueden anular cobranzas pendientes.');
   $('an-cant').textContent = regs.length;
   $('an-motivo').value = '';
   window._anular = regs.map(x => x.id);
@@ -871,14 +905,17 @@ async function confirmarAnular(){
   const motivo = $('an-motivo').value.trim();
   if (!motivo) return toast('Escribí el motivo.');
   const ids = window._anular || [];
+  // Doble seguro: reconfirmar que siguen pendientes antes de anular
+  const idsPend = cache.filter(x => ids.includes(x.id) && x.estado === 'pendiente').map(x => x.id);
+  if (!idsPend.length) { cerrar('m-anular'); return toast('Esas cobranzas ya no están pendientes.'); }
   const { error } = await db.from('cob_cobranzas').update({
     estado:'anulado', motivo_anulacion: motivo,
     anulado_por: U.nombre, anulado_at: new Date().toISOString()
-  }).in('id', ids);
+  }).in('id', idsPend).eq('estado', 'pendiente');   // condición extra: solo si sigue pendiente
   if (error) return toast('Error: ' + error.message);
   cerrar('m-anular'); sel.clear();
   await traerCobranzas(); render();
-  toast(`${ids.length} anulada(s).`);
+  toast(`${idsPend.length} anulada(s).`);
 }
 
 async function marcar(id, estado){
@@ -892,34 +929,110 @@ async function marcar(id, estado){
 function vExportar(){
   const m = hoy().slice(0,7);
   return `<div class="card">
-    <h3><i class="fa-solid fa-file-csv" style="color:var(--primary)"></i> Exportar período</h3>
+    <h3><i class="fa-solid fa-filter" style="color:var(--primary)"></i> Filtros del período</h3>
     <div class="row"><div><label>Desde</label><input type="date" id="e-desde" class="input" value="${m}-01"></div>
     <div><label>Hasta</label><input type="date" id="e-hasta" class="input" value="${hoy()}"></div></div>
     <label>Vendedor</label>
     <select id="e-vend"><option value="">Todos</option>${[...new Set(cache.map(x=>x.vendedor))].map(v=>`<option>${esc(v)}</option>`).join('')}</select>
     <label>Estados a incluir</label>
-    <select id="e-estado"><option value="rendido">Solo rendidas (recomendado)</option><option value="pendiente,rendido">Pendientes + rendidas</option><option value="">Todas (incluye ya exportadas)</option></select>
+    <select id="e-estado"><option value="rendido">Solo rendidas (recomendado)</option><option value="pendiente,rendido">Pendientes + rendidas</option><option value="">Todas (incluye anuladas y exportadas)</option></select>
     <label>Medio</label>
     <select id="e-medio"><option value="efectivo">Solo efectivo</option><option value="">Todos los medios</option></select>
+  </div>
+
+  <div class="card">
+    <h3><i class="fa-solid fa-file-excel" style="color:var(--success)"></i> Control interno (Excel)</h3>
+    <p style="font-size:.84rem;color:var(--text-muted);line-height:1.5;margin-bottom:10px">Planilla ordenada con encabezado, subtotales por vendedor y totales, para revisar antes de subir a Odoo.</p>
+    <button class="btn" style="background:var(--success)" onclick="exportarExcel()"><i class="fa-solid fa-file-excel"></i> Descargar Excel (.xlsx)</button>
+  </div>
+
+  <div class="card">
+    <h3><i class="fa-solid fa-file-csv" style="color:var(--primary)"></i> Extracto para Odoo (CSV)</h3>
+    <p style="font-size:.84rem;color:var(--text-muted);line-height:1.5;margin-bottom:10px">Archivo para importar en el diario y conciliar, igual que Galicia o Mercado Pago.</p>
     <label>Diario de Odoo</label>
     <input class="input" id="e-diario" value="${DIARIO_ODOO}">
-    <label>Formato</label>
-    <select id="e-fmt">
-      <option value="odoo">Extracto para Odoo (coma, punto decimal)</option>
-      <option value="detalle">Detalle interno para Excel (punto y coma)</option>
-    </select>
     <label><input type="checkbox" id="e-marcar" checked style="width:auto"> Marcar como exportadas al descargar</label>
-    <div style="height:14px"></div>
-    <button class="btn" onclick="exportar()"><i class="fa-solid fa-download"></i> Generar CSV</button>
+    <div style="height:12px"></div>
+    <button class="btn" onclick="exportar()"><i class="fa-solid fa-download"></i> Generar CSV para Odoo</button>
     <div id="e-prev" style="margin-top:14px"></div>
   </div>
+
   <div class="card"><h3><i class="fa-solid fa-circle-info"></i> Importación en Odoo 18</h3>
     <p style="font-size:.84rem;line-height:1.55;color:var(--text-muted)">
     Contabilidad → diario <b>${DIARIO_ODOO}</b> → <b>Importar extracto</b> y mapear:
     <code>date</code>→Fecha, <code>payment_ref</code>→Etiqueta, <code>partner_id</code>→Empresa,
     <code>amount</code>→Importe, <code>unique_import_id</code>→ID único.<br>
-    El <b>ID único</b> evita duplicados si volvés a subir el mismo archivo. Después conciliás
-    línea por línea contra las facturas del cliente, igual que Galicia o Mercado Pago.</p></div>`;
+    El <b>ID único</b> evita duplicados si volvés a subir el mismo archivo.</p></div>`;
+}
+
+async function filtrarParaExport(){
+  const d = $('e-desde').value, h = $('e-hasta').value;
+  const estRaw = $('e-estado').value;
+  const est = estRaw ? estRaw.split(',') : null;
+  const med = $('e-medio').value, vend = $('e-vend').value;
+  let q = db.from('cob_cobranzas').select('*').gte('fecha', d).lte('fecha', h).order('vendedor').order('fecha').order('id');
+  if (vend) q = q.eq('vendedor', vend);
+  if (med) q = q.eq('medio', med);
+  if (est) q = q.in('estado', est); else q = q.neq('estado','anulado');
+  const { data, error } = await q;
+  return { data, error, d, h };
+}
+
+async function exportarExcel(){
+  if (typeof XLSX === 'undefined') return toast('Cargando módulo Excel, probá de nuevo en unos segundos.');
+  const { data, error, d, h } = await filtrarParaExport();
+  if (error) return toast('Error: ' + error.message);
+  if (!data || !data.length) return toast('No hay cobranzas con esos filtros.');
+
+  // Armado de filas: título, metadatos, encabezado, datos con subtotal por vendedor, total general
+  const filas = [];
+  filas.push(['COBRANZAS EN EFECTIVO — ' + EMPRESA]);
+  filas.push(['Período: ' + d + ' al ' + h + '   ·   Generado: ' + new Date().toLocaleString('es-AR')]);
+  filas.push([]);
+  const enc = ['Fecha','Vendedor','Cliente','CUIT','Código','Importe','Medio','Comprobantes','Estado','Rendición','Observaciones'];
+  filas.push(enc);
+
+  let totalGen = 0, subVend = 0, vendActual = null;
+  const filaInicioDatos = filas.length;
+  const subtotales = [];   // {rowExcel} para negrita
+
+  const flush = () => {
+    if (vendActual !== null) {
+      filas.push(['', 'Subtotal ' + vendActual, '', '', '', subVend, '', '', '', '', '']);
+      subtotales.push(filas.length);   // 1-based row de subtotal
+      filas.push([]);
+    }
+  };
+  data.forEach(r => {
+    const v = r.vendedor_nombre || r.vendedor;
+    if (vendActual !== null && v !== vendActual) { flush(); subVend = 0; }
+    vendActual = v;
+    filas.push([ r.fecha, v, r.cliente_nombre, r.cliente_cuit||'', r.cliente_codigo||'',
+      Number(r.importe), r.medio, r.comprobantes||'', r.estado, r.rendicion||'', r.observaciones||'' ]);
+    subVend += Number(r.importe); totalGen += Number(r.importe);
+  });
+  flush();
+  const filaTotal = filas.length + 1;
+  filas.push(['', 'TOTAL GENERAL', '', '', '', totalGen, '', '', '', '', '']);
+
+  const ws = XLSX.utils.aoa_to_sheet(filas);
+  // Anchos de columna
+  ws['!cols'] = [{wch:11},{wch:22},{wch:38},{wch:15},{wch:9},{wch:14},{wch:13},{wch:20},{wch:11},{wch:16},{wch:24}];
+  // Combinar título
+  ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:10}}, {s:{r:1,c:0},e:{r:1,c:10}}];
+
+  // Formato de importes (columna F = índice 5) como número con miles y 2 decimales
+  const totalRows = filas.length;
+  for (let R = filaInicioDatos; R <= totalRows; R++) {
+    const cell = ws[XLSX.utils.encode_cell({r:R-1, c:5})];
+    if (cell && typeof cell.v === 'number') cell.z = '#,##0.00';
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Cobranzas');
+  const nombre = `control_cobranzas_${d}_a_${h}.xlsx`;
+  XLSX.writeFile(wb, nombre);
+  toast(`Excel generado: ${data.length} cobranzas.`);
 }
 
 function csvEsc(v, sep){
@@ -928,40 +1041,23 @@ function csvEsc(v, sep){
 }
 
 async function exportar(){
-  const d = $('e-desde').value, h = $('e-hasta').value;
-  const est = $('e-estado').value ? $('e-estado').value.split(',') : null;
-  const med = $('e-medio').value, vend = $('e-vend').value, fmt = $('e-fmt').value;
   const diario = $('e-diario').value;
-
-  let q = db.from('cob_cobranzas').select('*').gte('fecha', d).lte('fecha', h).neq('estado','anulado').order('fecha').order('id');
-  if (vend) q = q.eq('vendedor', vend);
-  if (med) q = q.eq('medio', med);
-  if (est) q = q.in('estado', est);
-  const { data, error } = await q;
+  const { data, error, d, h } = await filtrarParaExport();
   if (error) return toast('Error: ' + error.message);
   if (!data || !data.length) return toast('No hay cobranzas con esos filtros.');
 
-  let sep, headers, filas, bom = '';
-  if (fmt === 'odoo') {
-    sep = ',';
-    headers = ['date','payment_ref','partner_id','amount','unique_import_id','ref','journal_id'];
-    filas = data.map(r => [
-      r.fecha,
-      `COB EFVO ${r.vendedor_nombre||r.vendedor} - ${r.cliente_nombre}`,
-      r.cliente_nombre,
-      Number(r.importe).toFixed(2),
-      r.uid,
-      r.comprobantes || '',
-      diario
-    ]);
-  } else {
-    sep = ';'; bom = '\uFEFF';
-    headers = ['ID','UID','Fecha','Vendedor','Cliente','Codigo','CUIT','Importe','Medio','Comprobantes','Observaciones','Estado'];
-    filas = data.map(r => [r.id, r.uid, r.fecha, r.vendedor_nombre||r.vendedor, r.cliente_nombre, r.cliente_codigo||'',
-      r.cliente_cuit||'', Number(r.importe).toFixed(2).replace('.',','), r.medio, r.comprobantes||'', r.observaciones||'', r.estado]);
-  }
-  const csv = bom + [headers.join(sep), ...filas.map(f => f.map(v => csvEsc(v,sep)).join(sep))].join('\r\n');
-  const nombre = `cobranzas_${fmt}_${d}_a_${h}.csv`;
+  const headers = ['date','payment_ref','partner_id','amount','unique_import_id','ref','journal_id'];
+  const filas = data.map(r => [
+    r.fecha,
+    `COB EFVO ${r.vendedor_nombre||r.vendedor} - ${r.cliente_nombre}`,
+    r.cliente_nombre,
+    Number(r.importe).toFixed(2),
+    r.uid,
+    r.comprobantes || '',
+    diario
+  ]);
+  const csv = [headers.join(','), ...filas.map(f => f.map(v => csvEsc(v,',')).join(','))].join('\r\n');
+  const nombre = `cobranzas_odoo_${d}_a_${h}.csv`;
   const url = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8;' }));
   const a = document.createElement('a'); a.href = url; a.download = nombre; a.click(); URL.revokeObjectURL(url);
 
@@ -969,7 +1065,7 @@ async function exportar(){
   $('e-prev').innerHTML = `<div class="mini"><div class="l">Exportado</div><div class="v">${money(total)}</div>
     <div class="l">${data.length} líneas · ${nombre}</div></div>`;
 
-  if ($('e-marcar').checked && fmt === 'odoo') {
+  if ($('e-marcar').checked) {
     const ids = data.map(r => r.id);
     await db.from('cob_cobranzas').update({ estado:'exportado', exportado_at:new Date().toISOString() }).in('id', ids);
     await traerCobranzas();
