@@ -338,15 +338,29 @@ async function cargarClientes(forzar){
 function abrirClientes(){ $('cli-q').value=''; $('cli-res').innerHTML=''; buscarClientes(); abrir('m-cli'); setTimeout(()=>$('cli-q').focus(),200); }
 
 function buscarClientes(){
-  const q = norm($('cli-q').value).trim();
-  let base = clientes;
-  if (U.rol !== 'admin') { const mios = base.filter(c => !c.vendedor || c.vendedor === U.usuario); if (mios.length) base = mios; }
-  let res = q.length < 2 ? base.slice(0,25)
-    : base.filter(c => norm(c.nombre).includes(q) || norm(c.codigo).includes(q) || norm(c.cuit).replace(/-/g,'').includes(q.replace(/-/g,''))).slice(0,40);
-  $('cli-info').textContent = `${clientes.length} clientes en el equipo · mostrando ${res.length}`;
+  const raw = $('cli-q').value.trim();
+  const q = norm(raw);
+  const base = clientes;   // todos ven toda la cartera
+  let res;
+  if (!q) {
+    res = base.slice(0, 50);
+  } else {
+    // busca todas las palabras del texto (en cualquier orden) dentro de nombre+localidad+código
+    const palabras = q.split(/\s+/).filter(Boolean);
+    const qNum = q.replace(/\D/g,'');
+    res = base.filter(c => {
+      const campo = norm(c.nombre + ' ' + (c.localidad||'') + ' ' + (c.codigo||''));
+      const okTexto = palabras.every(p => campo.includes(p));
+      const okCuit = qNum.length >= 3 && (c.cuit||'').replace(/\D/g,'').includes(qNum);
+      return okTexto || okCuit;
+    }).slice(0, 60);
+  }
+  $('cli-info').textContent = raw
+    ? `${res.length} resultado(s) de ${base.length} clientes`
+    : `${base.length} clientes · escribí para buscar`;
   $('cli-res').innerHTML = res.length ? res.map(c =>
-    `<div class="cli" onclick="elegirCliente(${c.id})"><b>${esc(c.nombre)}</b><span>${esc(c.codigo||'s/cód')} · ${esc(c.localidad||'')} ${c.cuit?'· '+esc(c.cuit):''}</span></div>`).join('')
-    : `<div class="empty">Sin resultados.<br><button class="btn sm sec" style="margin-top:10px" onclick="usarLibre()">Usar «${esc($('cli-q').value)}» como cliente</button></div>`;
+    `<div class="cli" onclick="elegirCliente(${c.id})"><b>${esc(c.nombre)}</b><span>${[c.localidad, c.cuit].filter(Boolean).map(esc).join(' · ')||'—'}</span></div>`).join('')
+    : `<div class="empty">No se encontró «${esc(raw)}».<br><button class="btn sm sec" style="margin-top:10px" onclick="usarLibre()">Usar ese nombre igual</button></div>`;
 }
 function elegirCliente(id){
   clienteSel = clientes.find(c => c.id === id);
@@ -667,7 +681,7 @@ function copiarComprobante(){ navigator.clipboard.writeText(window._cmp.texto).t
 function compartirComprobante(){ navigator.share({ title:'Rendición '+EMPRESA, text:window._cmp.texto }).catch(()=>{}); }
 
 /* ---------- ADMIN: recepción de rendiciones ---------- */
-let rec = { vend:'', desde:hoy(), hasta:hoy() };
+let rec = { vend:'', desde:'2000-01-01', hasta:'2999-12-31' };
 
 function vRecepcion(){
   const vends = [...new Set(cache.filter(r=>r.estado==='pendiente').map(r => r.vendedor))];
@@ -686,8 +700,8 @@ function vRecepcion(){
       <option value="">Todos</option>
       ${vends.map(v => `<option ${rec.vend===v?'selected':''}>${esc(v)}</option>`).join('')}
     </select>
-    <div class="row"><div><label>Desde</label><input type="date" class="input" value="${rec.desde}" onchange="rec.desde=this.value;render()"></div>
-      <div><label>Hasta</label><input type="date" class="input" value="${rec.hasta}" onchange="rec.hasta=this.value;render()"></div></div>
+    <div class="row"><div><label>Desde</label><input type="date" class="input" value="${rec.desde==='2000-01-01'?'':rec.desde}" onchange="rec.desde=this.value||'2000-01-01';render()"></div>
+      <div><label>Hasta</label><input type="date" class="input" value="${rec.hasta==='2999-12-31'?'':rec.hasta}" onchange="rec.hasta=this.value||'2999-12-31';render()"></div></div>
     <div class="chips" style="margin-top:8px">
       <button class="chip" onclick="rec.desde='2000-01-01';rec.hasta='2999-12-31';render()">Todo lo pendiente</button>
       <button class="chip" onclick="selTodos(${JSON.stringify(uids).replace(/"/g,'&quot;')})">Tildar todo</button>
