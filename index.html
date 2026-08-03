@@ -152,6 +152,17 @@ td.n,th.n{text-align:right}
   </div>
 </div>
 
+<!-- ============ MODAL COMPROBANTE ============ -->
+<div class="modal" id="m-cmp" onclick="if(event.target===this)cerrar('m-cmp')">
+  <div class="modal-box">
+    <h3><i class="fa-solid fa-receipt"></i> Comprobante de rendición</h3>
+    <pre id="cmp-texto" style="background:var(--bg-main);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:.78rem;white-space:pre-wrap;overflow-x:auto;font-family:ui-monospace,monospace;line-height:1.5"></pre>
+    <div id="cmp-acciones"></div>
+    <div style="height:8px"></div>
+    <button class="btn sec" onclick="cerrar('m-cmp')">Cerrar</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -159,7 +170,7 @@ td.n,th.n{text-align:right}
    CONFIGURACIÓN  ·  reemplazar por los datos de tu proyecto Supabase
    ===================================================================== */
 const SUP_URL = 'https://ugsaztealewuahbliyxx.supabase.co';   // <-- proyecto NAKEL (verificar contra Supabase)
-const SUP_KEY = 'sb_publishable_j7MV81AQyXCPt7JAEB0xgA_B9nkbgna';
+const SUP_KEY =  'sb_publishable_j7MV81AQyXCPt7JAEB0xgA_B9nkbgna';
 const EMPRESA = 'NAKEL SA';
 const PREFIJO_ID = 'NKL-COB';           // prefijo del ID único de importación en Odoo
 const DIARIO_ODOO = 'Caja Cobranzas Efectivo';  // nombre del diario en Odoo (editable al exportar)
@@ -244,7 +255,7 @@ function entrar(){
   $('h-name').textContent = U.nombre;
   $('h-rol').textContent = (U.rol === 'admin' ? 'Administración · ' : 'Vendedor · ') + EMPRESA;
   const items = U.rol === 'admin'
-    ? [['panel','fa-chart-pie','Panel'],['cobranzas','fa-list','Cobranzas'],['exportar','fa-file-csv','Exportar'],['datos','fa-database','Datos']]
+    ? [['panel','fa-chart-pie','Panel'],['recepcion','fa-hand-holding-dollar','Recepción'],['cobranzas','fa-list','Cobranzas'],['exportar','fa-file-csv','Exportar'],['datos','fa-database','Datos']]
     : [['nueva','fa-plus-circle','Cargar'],['mias','fa-list','Mis cobros'],['rendicion','fa-sack-dollar','Rendición']];
   vista = items[0][0];
   $('nav').innerHTML = items.map(i =>
@@ -352,7 +363,7 @@ function render(){
   const avisoCola = pend ? `<div class="card" style="border-color:var(--warn)"><b>${pend}</b> cobranza(s) sin sincronizar. <button class="btn sm" style="margin-top:8px" onclick="sincronizar()">Sincronizar ahora</button></div>` : '';
   v.innerHTML = banner + avisoCola + ({
     nueva: vNueva, mias: vMias, rendicion: vRendicion,
-    panel: vPanel, cobranzas: vCobranzas, exportar: vExportar, datos: vDatos
+    panel: vPanel, recepcion: vRecepcion, cobranzas: vCobranzas, exportar: vExportar, datos: vDatos
   }[vista] || vNueva)();
   estadoRed();
   if (vista === 'datos' && U.rol === 'admin') cargarUsuariosAdmin();
@@ -544,25 +555,178 @@ function fila(r){
     </div><div class="am">${money(r.importe)}</div></div>`;
 }
 
-/* ---------- VENDEDOR: rendición ---------- */
+/* ---------- VENDEDOR: rendición con selección ---------- */
+let sel = new Set();   // uids seleccionados para rendir
+
+function toggleSel(uid){ sel.has(uid) ? sel.delete(uid) : sel.add(uid); render(); }
+function selTodos(uids){ uids.forEach(u => sel.add(u)); render(); }
+function selNada(){ sel.clear(); render(); }
+
+function filaSel(r){
+  const id = r.uid || String(r.id);
+  const marc = sel.has(id);
+  return `<div class="item" style="cursor:pointer;${marc?'border-color:var(--primary);background:var(--primary-light)':''}" onclick="toggleSel('${id}')">
+    <div style="display:flex;align-items:center;gap:10px">
+      <i class="fa-${marc?'solid fa-square-check':'regular fa-square'}" style="font-size:1.3rem;color:${marc?'var(--primary)':'var(--text-muted)'}"></i>
+      <div><div class="nm">${esc(r.cliente_nombre)}</div>
+        <div class="dt">${r.fecha}${r.comprobantes?' · '+esc(r.comprobantes):''}</div></div>
+    </div><div class="am">${money(r.importe)}</div></div>`;
+}
+
 function vRendicion(){
   const todo = misRegistros().filter(r => r.medio === 'efectivo' && r.estado !== 'anulado');
-  const pend = todo.filter(r => r.estado === 'pendiente' || r._local);   // sin filtro: es el saldo real
+  const pend = todo.filter(r => r.estado === 'pendiente' || r._local);
   const tot  = pend.reduce((s,r) => s + Number(r.importe), 0);
+  const uids = pend.map(r => r.uid || String(r.id));
+  const selReg = pend.filter(r => sel.has(r.uid || String(r.id)));
+  const totSel = selReg.reduce((s,r) => s + Number(r.importe), 0);
   const hist = todo.filter(r => enPeriodo(r) && !(r.estado === 'pendiente' || r._local));
   const totH = hist.reduce((s,r) => s + Number(r.importe), 0);
   const rotulo = fp.desde === fp.hasta ? fp.desde : `${fp.desde} al ${fp.hasta}`;
+
   return `<div class="kpi"><div class="lbl">Efectivo en mi poder · a rendir</div><div class="big">${money(tot)}</div>
-      <div class="lbl" style="margin-top:6px">${pend.length} cobranza(s) · total acumulado, sin filtro</div></div>
-    ${pend.length ? `<div class="card"><h3><i class="fa-solid fa-sack-dollar" style="color:var(--warn)"></i> Detalle a entregar</h3>
-      ${pend.map(fila).join('')}</div>` : '<div class="card"><div class="empty">No hay efectivo pendiente de rendir.</div></div>'}
+      <div class="lbl" style="margin-top:6px">${pend.length} cobranza(s)</div></div>
+
+    ${pend.length ? `<div class="card">
+      <h3><i class="fa-solid fa-hand-holding-dollar" style="color:var(--warn)"></i> Armar rendición</h3>
+      <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:10px">Tildá las cobranzas que vas a entregar y generá el comprobante para mostrar en administración.</p>
+      <div class="chips" style="margin-bottom:8px">
+        <button class="chip" onclick="selTodos(${JSON.stringify(uids).replace(/"/g,'&quot;')})"><i class="fa-solid fa-check-double"></i> Todas</button>
+        ${sel.size?`<button class="chip on" onclick="selNada()"><i class="fa-solid fa-xmark"></i> Ninguna</button>`:''}
+      </div>
+      ${pend.map(filaSel).join('')}
+      ${sel.size ? `<div class="item" style="background:var(--primary);color:#fff;border:none;margin-top:8px">
+          <div class="nm" style="color:#fff">SELECCIONADO (${selReg.length})</div><div class="am">${money(totSel)}</div></div>
+        <div style="height:10px"></div>
+        <button class="btn" onclick="generarComprobante()"><i class="fa-solid fa-receipt"></i> Generar comprobante de rendición</button>`
+        : '<p style="font-size:.8rem;color:var(--text-muted);text-align:center;margin-top:8px">Seleccioná al menos una cobranza.</p>'}
+      </div>` : '<div class="card"><div class="empty">No hay efectivo pendiente de rendir.</div></div>'}
+
     <div class="card"><h3><i class="fa-solid fa-clock-rotate-left"></i> Ya rendido</h3>
-      <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:8px">Para controlar entregas anteriores contra tu planilla.</p>
-    </div>
+      <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:8px">Historial para controlar contra tu planilla.</p></div>
     ${barraPeriodo()}
     <div class="mini" style="margin-bottom:12px"><div class="l">Rendido · ${rotulo}</div>
       <div class="v">${money(totH)}</div><div class="l">${hist.length} cobranza(s)</div></div>
     ${hist.length ? hist.map(fila).join('') : '<div class="empty">Sin entregas rendidas en este período.</div>'}`;
+}
+
+/* ---- Comprobante de rendición (texto + descarga) ---- */
+function comprobanteTexto(regs, quien){
+  const tot = regs.reduce((s,r) => s + Number(r.importe), 0);
+  const ahora = new Date().toLocaleString('es-AR');
+  const L = [];
+  L.push('COMPROBANTE DE RENDICIÓN — ' + EMPRESA);
+  L.push('Vendedor: ' + quien);
+  L.push('Generado: ' + ahora);
+  L.push('Cobranzas: ' + regs.length);
+  L.push('─────────────────────────────');
+  regs.slice().sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||''))
+     .forEach(r => L.push(`${r.fecha}  ${money(r.importe).padStart(14)}  ${r.cliente_nombre}`));
+  L.push('─────────────────────────────');
+  L.push('TOTAL EFECTIVO: ' + money(tot));
+  L.push('');
+  L.push('Firma vendedor: __________   Recibí conformidad: __________');
+  return L.join('\n');
+}
+
+async function generarComprobante(){
+  const pend = misRegistros().filter(r => r.medio === 'efectivo' && (r.estado === 'pendiente' || r._local));
+  const regs = pend.filter(r => sel.has(r.uid || String(r.id)));
+  if (!regs.length) return toast('No hay cobranzas seleccionadas.');
+  const texto = comprobanteTexto(regs, U.nombre);
+  abrirComprobante(texto, regs, U.nombre, false);
+}
+
+function abrirComprobante(texto, regs, quien, esAdmin){
+  const tot = regs.reduce((s,r) => s + Number(r.importe), 0);
+  $('cmp-texto').textContent = texto;
+  $('cmp-acciones').innerHTML =
+    `<button class="btn" onclick="descargarComprobante()"><i class="fa-solid fa-download"></i> Descargar comprobante (.txt)</button>
+     <div style="height:8px"></div>
+     <button class="btn sec" onclick="copiarComprobante()"><i class="fa-solid fa-copy"></i> Copiar texto</button>
+     ${navigator.share?`<div style="height:8px"></div><button class="btn sec" onclick="compartirComprobante()"><i class="fa-solid fa-share-nodes"></i> Compartir</button>`:''}
+     ${esAdmin?`<div style="height:8px"></div><button class="btn" style="background:var(--success)" onclick="confirmarRecepcion()"><i class="fa-solid fa-check-double"></i> Confirmar recepción (${regs.length} · ${money(tot)})</button>`:''}`;
+  window._cmp = { texto, regs, quien };
+  abrir('m-cmp');
+}
+function descargarComprobante(){
+  const { texto, quien } = window._cmp;
+  const url = URL.createObjectURL(new Blob([texto], { type:'text/plain;charset=utf-8' }));
+  const a = document.createElement('a'); a.href = url;
+  a.download = `rendicion_${norm(quien).replace(/\s+/g,'_')}_${hoy()}.txt`; a.click(); URL.revokeObjectURL(url);
+  toast('Comprobante descargado.');
+}
+function copiarComprobante(){ navigator.clipboard.writeText(window._cmp.texto).then(()=>toast('Copiado.')); }
+function compartirComprobante(){ navigator.share({ title:'Rendición '+EMPRESA, text:window._cmp.texto }).catch(()=>{}); }
+
+/* ---------- ADMIN: recepción de rendiciones ---------- */
+let rec = { vend:'', desde:hoy(), hasta:hoy() };
+
+function vRecepcion(){
+  const vends = [...new Set(cache.filter(r=>r.estado==='pendiente').map(r => r.vendedor))];
+  let pend = cache.filter(r => r.estado === 'pendiente' && r.medio === 'efectivo'
+    && (!rec.vend || r.vendedor === rec.vend)
+    && r.fecha >= rec.desde && r.fecha <= rec.hasta);
+  const selReg = pend.filter(r => sel.has(String(r.id)));
+  const totSel = selReg.reduce((s,r) => s + Number(r.importe), 0);
+  const uids = pend.map(r => String(r.id));
+
+  return `<div class="card">
+    <h3><i class="fa-solid fa-hand-holding-dollar" style="color:var(--primary)"></i> Recepción de efectivo</h3>
+    <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:8px">Seleccioná vendedor y período, tildá lo que entrega y confirmá la recepción.</p>
+    <label>Vendedor</label>
+    <select onchange="rec.vend=this.value;sel.clear();render()">
+      <option value="">Todos</option>
+      ${vends.map(v => `<option ${rec.vend===v?'selected':''}>${esc(v)}</option>`).join('')}
+    </select>
+    <div class="row"><div><label>Desde</label><input type="date" class="input" value="${rec.desde}" onchange="rec.desde=this.value;render()"></div>
+      <div><label>Hasta</label><input type="date" class="input" value="${rec.hasta}" onchange="rec.hasta=this.value;render()"></div></div>
+    <div class="chips" style="margin-top:8px">
+      <button class="chip" onclick="rec.desde='2000-01-01';rec.hasta='2999-12-31';render()">Todo lo pendiente</button>
+      <button class="chip" onclick="selTodos(${JSON.stringify(uids).replace(/"/g,'&quot;')})">Tildar todo</button>
+      ${sel.size?`<button class="chip on" onclick="selNada()">Ninguno</button>`:''}
+    </div>
+  </div>
+  ${pend.length ? `<div class="card">
+    <h3>${pend.length} cobranza(s) pendiente(s)</h3>
+    ${pend.map(r => filaSelAdmin(r)).join('')}
+    ${sel.size ? `<div class="item" style="background:var(--primary);color:#fff;border:none;margin-top:8px">
+        <div class="nm" style="color:#fff">A RECIBIR (${selReg.length})</div><div class="am">${money(totSel)}</div></div>
+      <div style="height:10px"></div>
+      <button class="btn" onclick="verComprobanteAdmin()"><i class="fa-solid fa-receipt"></i> Ver comprobante y confirmar</button>`
+      : '<p style="font-size:.8rem;color:var(--text-muted);text-align:center;margin-top:8px">Tildá las cobranzas que estás recibiendo.</p>'}
+    </div>`
+    : '<div class="card"><div class="empty">No hay efectivo pendiente con esos filtros.</div></div>'}`;
+}
+
+function filaSelAdmin(r){
+  const id = String(r.id), marc = sel.has(id);
+  return `<div class="item" style="cursor:pointer;${marc?'border-color:var(--primary);background:var(--primary-light)':''}" onclick="toggleSel('${id}')">
+    <div style="display:flex;align-items:center;gap:10px">
+      <i class="fa-${marc?'solid fa-square-check':'regular fa-square'}" style="font-size:1.3rem;color:${marc?'var(--primary)':'var(--text-muted)'}"></i>
+      <div><div class="nm">${esc(r.cliente_nombre)}</div>
+        <div class="dt">${r.fecha} · ${esc(r.vendedor_nombre||r.vendedor)}</div></div>
+    </div><div class="am">${money(r.importe)}</div></div>`;
+}
+
+function verComprobanteAdmin(){
+  const pend = cache.filter(r => r.estado === 'pendiente' && sel.has(String(r.id)));
+  if (!pend.length) return toast('Nada seleccionado.');
+  const quien = [...new Set(pend.map(r => r.vendedor_nombre||r.vendedor))].join(', ');
+  abrirComprobante(comprobanteTexto(pend, quien), pend, quien, true);
+}
+
+async function confirmarRecepcion(){
+  const regs = window._cmp.regs;
+  const ids = regs.map(r => r.id).filter(Boolean);
+  if (!ids.length) return toast('No se pudo identificar las cobranzas.');
+  const rendicionId = 'REN-' + hoy().replace(/-/g,'') + '-' + Math.random().toString(36).slice(2,5).toUpperCase();
+  const { error } = await db.from('cob_cobranzas')
+    .update({ estado:'rendido', rendicion:rendicionId }).in('id', ids);
+  if (error) return toast('Error: ' + error.message);
+  cerrar('m-cmp'); sel.clear();
+  await traerCobranzas(); render();
+  toast(`Recepción confirmada: ${ids.length} cobranzas.`);
 }
 
 /* ---------- ADMIN: panel ---------- */
@@ -774,8 +938,15 @@ async function guardarUsuario(){
     p_activo:  $('u-activo').checked
   };
   if (!p.p_usuario || !p.p_nombre) return toast('Usuario y nombre son obligatorios.');
+  if (!U.pin) { toast('Cerrá sesión y volvé a entrar (falta validar tu PIN).'); return; }
   const { data, error } = await db.rpc('cob_admin_guardar_usuario', p);
-  if (error) return toast(error.message.replace(/^.*?:\s*/, ''));
+  if (error) {
+    const m = error.message || '';
+    if (m.includes('cob_admin_guardar_usuario') || m.includes('does not exist') || m.includes('function'))
+      return toast('Falta correr el SQL del paso 2 en Supabase.');
+    if (m.includes('No autorizado')) return toast('Tu PIN de admin no validó. Cerrá sesión y reingresá.');
+    return toast(m.replace(/^.*?:\s*/, ''));
+  }
   cerrar('m-user');
   toast(data || 'Guardado.');
   await cargarUsuariosAdmin();
@@ -785,26 +956,36 @@ async function guardarUsuario(){
 async function importarClientes(){
   const f = $('d-file').files[0];
   if (!f) return toast('Elegí un archivo.');
+  $('d-msg').innerHTML = 'Procesando…';
   const txt = await f.text();
   const lineas = txt.split(/\r?\n/).filter(l => l.trim());
-  if (lineas.length < 2) return toast('Archivo vacío.');
+  if (lineas.length < 2) { $('d-msg').innerHTML = 'Archivo vacío.'; return; }
   const sep = (lineas[0].match(/;/g)||[]).length >= (lineas[0].match(/,/g)||[]).length ? ';' : ',';
   const cols = lineas[0].replace(/^\uFEFF/,'').split(sep).map(c => norm(c.trim()));
   const ix = n => cols.indexOf(n);
+  if (ix('NOMBRE') < 0) { $('d-msg').innerHTML = `<b style="color:var(--danger)">No se encontró la columna "nombre".</b> El encabezado leído fue: ${cols.join(' / ')}`; return; }
   const regs = lineas.slice(1).map(l => {
     const p = l.split(sep).map(x => x.trim().replace(/^"|"$/g,''));
     return { codigo:p[ix('CODIGO')]||null, nombre:p[ix('NOMBRE')]||'', cuit:p[ix('CUIT')]||null,
              localidad:p[ix('LOCALIDAD')]||null, vendedor:p[ix('VENDEDOR')]||null, activo:true };
   }).filter(r => r.nombre);
-  if (!regs.length) return toast('No se detectó la columna "nombre".');
-  if ($('d-reem').checked) await db.from('cob_clientes').update({ activo:false }).neq('id', 0);
-  let ok = 0;
+  if (!regs.length) { $('d-msg').innerHTML = 'No se detectaron filas con nombre.'; return; }
+  if ($('d-reem').checked) {
+    const { error } = await db.from('cob_clientes').update({ activo:false }).neq('id', 0);
+    if (error) { $('d-msg').innerHTML = `<b style="color:var(--danger)">No se pudo limpiar la cartera:</b> ${esc(error.message)}<br><small>Si dice permisos/policy, corré el SQL de permisos.</small>`; return; }
+  }
+  let ok = 0, ultimoError = null;
   for (let i = 0; i < regs.length; i += 500) {
     const { error } = await db.from('cob_clientes').insert(regs.slice(i, i+500));
-    if (!error) ok += regs.slice(i, i+500).length;
+    if (!error) ok += regs.slice(i, i+500).length; else ultimoError = error;
   }
-  $('d-msg').innerHTML = `<b>${ok}</b> clientes importados de ${regs.length}.`;
-  await cargarClientes(true); render(); toast('Importación finalizada.');
+  if (ok === 0 && ultimoError) {
+    $('d-msg').innerHTML = `<b style="color:var(--danger)">No se importó ningún cliente.</b><br>Motivo: ${esc(ultimoError.message)}<br><small>Casi seguro es permiso de escritura: ejecutá el SQL de permisos en Supabase.</small>`;
+    return;
+  }
+  $('d-msg').innerHTML = `<b style="color:var(--success)">${ok}</b> clientes importados de ${regs.length}.` +
+    (ok < regs.length ? `<br><small style="color:var(--warn)">${regs.length-ok} fallaron: ${esc(ultimoError?ultimoError.message:'')}</small>` : '');
+  await cargarClientes(true); render(); toast(`Importados ${ok} clientes.`);
 }
 </script>
 </body>
