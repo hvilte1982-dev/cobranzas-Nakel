@@ -308,7 +308,13 @@ async function cargarClientes(forzar){
   clientes = JSON.parse(localStorage.getItem('cob_clientes') || '[]');
   const last = localStorage.getItem('cob_clientes_ts');
   const viejo = !last || (Date.now() - Number(last)) > 86400000;   // 24 h
-  if (!db || !navigator.onLine || (!forzar && !viejo && clientes.length)) return;
+  // Chequeo rápido: ¿cuántos clientes hay en el servidor? Si no coincide con lo local, refresca.
+  let desincronizado = false;
+  if (db && navigator.onLine) {
+    const { count } = await db.from('cob_clientes').select('id', { count:'exact', head:true }).eq('activo', true);
+    if (typeof count === 'number' && count !== clientes.length) desincronizado = true;
+  }
+  if (!db || !navigator.onLine || (!forzar && !viejo && !desincronizado && clientes.length)) return;
   let todos = [], desde = 0;
   while (true) {
     let q = db.from('cob_clientes').select('id,codigo,nombre,cuit,localidad,vendedor')
@@ -380,7 +386,8 @@ function vNueva(){
     <label>Cliente</label>
     <button class="btn sec" style="justify-content:space-between;text-align:left" onclick="abrirClientes()">
       <span>${c ? esc(c.nombre) : 'Tocá para buscar…'}</span><i class="fa-solid fa-magnifying-glass"></i></button>
-    ${c ? `<p style="font-size:.72rem;color:var(--text-muted);margin-top:5px">${esc(c.codigo||'s/código')} ${c.localidad?'· '+esc(c.localidad):''}</p>` : ''}
+    ${c ? `<p style="font-size:.72rem;color:var(--text-muted);margin-top:5px">${esc(c.codigo||'s/código')} ${c.localidad?'· '+esc(c.localidad):''}</p>`
+        : `<p style="font-size:.72rem;color:var(--text-muted);margin-top:5px">${clientes.length} clientes en el equipo · <a href="#" onclick="cargarClientes(true).then(()=>{render();toast('Cartera actualizada.')});return false" style="color:var(--primary)">actualizar</a></p>`}
     <label>Importe cobrado</label>
     <input type="number" inputmode="decimal" step="0.01" id="f-importe" class="input" placeholder="0,00" style="font-size:1.4rem;font-weight:700">
     <label>Medio</label>
